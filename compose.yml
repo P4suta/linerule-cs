@@ -1,0 +1,35 @@
+# linerule-cs dev compose file.
+#
+# Usage from the host:
+#   docker compose build                        # one-time image build
+#   docker compose run --rm dev <command>       # one-shot recipe
+#   docker compose run --rm dev bash            # interactive shell
+#   just <recipe>                               # all recipes route through this service automatically
+#
+# Caches live inside the bind-mounted workspace (uid 1000 from the WSL host),
+# so the dev user inside the container has the same uid and can write freely.
+# Named volumes were avoided because Docker creates them root-owned.
+
+services:
+  dev:
+    build:
+      context: .
+      args:
+        USER_UID: "1000"
+        USER_GID: "1000"
+    image: linerule-cs/dev:latest
+    init: true
+    tty: true
+    stdin_open: true
+    working_dir: /workspace
+    environment:
+      - INSIDE_CONTAINER=1
+      - HOME=/home/dev
+      - NUGET_PACKAGES=/workspace/.cache/nuget
+      - DOTNET_CLI_HOME=/workspace/.cache/dotnet
+      - NPM_CONFIG_CACHE=/workspace/.cache/npm
+      - DOTNET_NOLOGO=1
+      - DOTNET_CLI_TELEMETRY_OPTOUT=1
+    volumes:
+      - .:/workspace:cached
+    command: ["bash"]

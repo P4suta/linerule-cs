@@ -1,0 +1,20 @@
+# What the build context does NOT need.
+# (Bind mount supplies the live source at runtime; the build only needs the Dockerfile.)
+**/bin/
+**/obj/
+**/TestResults/
+artifacts/
+.git/
+.jj/
+.vs/
+.vscode/
+.idea/
+node_modules/
+*.user
+*.suo
+
+# Avoid baking secrets into the image.
+.env
+.env.local
+*.pem
+*.key

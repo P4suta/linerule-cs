@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Linerule.Platform</RootNamespace>
+    <AssemblyName>Linerule.Platform</AssemblyName>
+    <Description>
+      Platform abstraction surface for linerule. Cross-platform (net10.0) part:
+      chord parser, IOverlaySurface / IHotkeyHost / IMouseTracker interfaces,
+      and a mock implementation for testing. Windows-specific impls live in
+      Linerule.Platform.Windows (net10.0-windows).
+    </Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Linerule.Core\Linerule.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Linerule.Platform.Tests" />
+    <InternalsVisibleTo Include="Linerule.Platform.Windows" />
+  </ItemGroup>
+
+</Project>

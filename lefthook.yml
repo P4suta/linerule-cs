@@ -1,0 +1,58 @@
+# lefthook — git hooks runner.
+# Install once with: `lefthook install` (memory: 2026-wave dev tooling).
+# Strict: every hook is a hard fail. No "skip on failure".
+
+# Tools assumed on PATH (mise-managed in the user's WSL env):
+#   csharpier (via `dotnet tool restore` + `dotnet csharpier`)
+#   typos
+#   actionlint
+#   npx (for commitlint)
+#   dotnet
+
+assert_lefthook_installed: true
+no_tty: false
+colors: true
+
+pre-commit:
+  parallel: true
+  follow: true
+  commands:
+    csharpier-check:
+      tags: format
+      glob: "*.cs"
+      run: dotnet csharpier check {staged_files}
+      stage_fixed: false
+
+    dotnet-format-style:
+      tags: lint
+      glob: "*.cs"
+      run: dotnet format style --verify-no-changes --include {staged_files} --no-restore
+
+    dotnet-format-analyzers:
+      tags: lint
+      glob: "*.cs"
+      run: dotnet format analyzers --verify-no-changes --include {staged_files} --no-restore
+
+    typos:
+      tags: spell
+      run: typos --color always {staged_files}
+
+    actionlint:
+      tags: ci
+      glob: "{.github/workflows/*.yml,.github/workflows/*.yaml}"
+      run: actionlint -color {staged_files}
+
+    xtask-strict:
+      tags: lint
+      glob: "*.cs"
+      run: dotnet run --project src/Linerule.XTask -- strict-code
+
+commit-msg:
+  commands:
+    commitlint:
+      run: npx --no -- commitlint --edit {1}
+
+pre-push:
+  commands:
+    test:
+      run: dotnet test --nologo --no-restore

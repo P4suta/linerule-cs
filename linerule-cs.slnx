@@ -1,0 +1,24 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Linerule.Core/Linerule.Core.csproj" />
+    <Project Path="src/Linerule.Config/Linerule.Config.csproj" />
+    <Project Path="src/Linerule.Platform/Linerule.Platform.csproj" />
+    <Project Path="src/Linerule.Platform.Windows/Linerule.Platform.Windows.csproj" />
+    <Project Path="src/Linerule.Cli/Linerule.Cli.csproj" />
+    <Project Path="src/Linerule.XTask/Linerule.XTask.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Linerule.Core.Tests/Linerule.Core.Tests.csproj" />
+    <Project Path="tests/Linerule.Config.Tests/Linerule.Config.Tests.csproj" />
+    <Project Path="tests/Linerule.Platform.Tests/Linerule.Platform.Tests.csproj" />
+  </Folder>
+  <Folder Name="/solution/">
+    <File Path="Directory.Build.props" />
+    <File Path="Directory.Packages.props" />
+    <File Path=".editorconfig" />
+    <File Path="BannedSymbols.txt" />
+    <File Path="global.json" />
+    <File Path="Justfile" />
+    <File Path="README.md" />
+  </Folder>
+</Solution>

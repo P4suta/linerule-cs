@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <RootNamespace>Linerule.Config.Tests</RootNamespace>
+    <!--
+      Test code legitimately exercises Tomlyn's reflection-based deserialize
+      (ConfigLoader.ParseString is marked [RequiresUnreferencedCode]). Tests
+      never get AOT-published, so opt this assembly out of trim/AOT analysis.
+    -->
+    <IsAotCompatible>false</IsAotCompatible>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Linerule.Config\Linerule.Config.csproj" />
+    <ProjectReference Include="..\..\src\Linerule.Core\Linerule.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit.v3" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="Verify.XunitV3" />
+    <PackageReference Include="coverlet.collector" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,7 @@
+# actionlint config. Defaults are already strict — this file is here mainly
+# to anchor self-hosted runner labels (none today) and document-config-vars policy.
+self-hosted-runner:
+  labels: []
+
+config-variables:
+  - CI

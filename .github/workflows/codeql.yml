@@ -1,0 +1,47 @@
+name: codeql
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  # Per repo policy `on: schedule` is forbidden — CodeQL is on-demand.
+
+permissions:
+  contents: read
+  security-events: write
+  actions: read
+
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: codeql analyze (csharp)
+    runs-on: windows-latest  # CodeQL needs the same TFM the code targets; net10.0-windows requires Windows.
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [csharp]
+
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+
+      - uses: actions/setup-dotnet@c2fa09f4bde5ebb9d1777cf28262a3eb3db3ced7  # v5.2.0
+        with:
+          global-json-file: global.json
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@3ce22a6e336a7fcc318bc58ae1986395bdc83ba7  # v4.35.4
+        with:
+          languages: ${{ matrix.language }}
+          queries: security-and-quality
+          config-file: ./.github/codeql/codeql-config.yml
+
+      - run: dotnet build -c Release --nologo
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@3ce22a6e336a7fcc318bc58ae1986395bdc83ba7  # v4.35.4
+        with:
+          category: /language:${{ matrix.language }}

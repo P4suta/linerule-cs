@@ -1,0 +1,64 @@
+﻿{
+  Layers: [
+    {
+      Geometry: {
+        Bounds: {
+          Width: 1920,
+          Height: 526,
+          Right: 1920,
+          Bottom: 526
+        }
+      },
+      Brush: {
+        Color: {
+          A: 170
+        }
+      }
+    },
+    {
+      Geometry: {
+        Bounds: {
+          Origin: {
+            Y: 554
+          },
+          Width: 1920,
+          Height: 526,
+          Top: 554,
+          Right: 1920,
+          Bottom: 1080
+        }
+      },
+      Brush: {
+        Color: {
+          A: 170
+        }
+      }
+    },
+    {
+      Geometry: {
+        Bounds: {
+          Origin: {
+            X: 1890,
+            Y: 12
+          },
+          Width: 18,
+          Height: 4,
+          Left: 1890,
+          Top: 12,
+          Right: 1908,
+          Bottom: 16
+        }
+      },
+      Brush: {
+        Color: {
+          R: 255,
+          G: 255,
+          B: 255,
+          A: 128
+        }
+      }
+    }
+  ],
+  IsEmpty: false,
+  LayerCount: 3
+}

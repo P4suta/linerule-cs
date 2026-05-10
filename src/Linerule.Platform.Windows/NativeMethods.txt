@@ -1,0 +1,71 @@
+// CsWin32 input — symbols imported into Windows.Win32.*.
+// Keep aligned with docs/adr/0009-transparency-via-dcomp.md (no LWA_*).
+//
+// Conventions per CsWin32 PInvoke004:
+//   - List the *enum type* (e.g. WINDOW_STYLE), not its individual constants
+//     (WS_POPUP). Constants are accessed via the typed enum at the call site.
+
+// Window lifecycle
+CreateWindowExW
+DestroyWindow
+RegisterClassExW
+UnregisterClassW
+DefWindowProcW
+ShowWindow
+GetMessageW
+TranslateMessage
+DispatchMessageW
+PostQuitMessage
+PostMessageW
+
+// Window styling for click-through + transparency
+GetWindowLongPtrW
+SetWindowLongPtrW
+SetWindowPos
+WINDOW_LONG_PTR_INDEX
+WINDOW_STYLE
+WINDOW_EX_STYLE
+HWND_TOPMOST
+HWND_MESSAGE
+SET_WINDOW_POS_FLAGS
+SHOW_WINDOW_CMD
+
+// Cursor + monitor
+GetCursorPos
+MonitorFromPoint
+GetMonitorInfoW
+MONITOR_FROM_FLAGS
+MONITORINFO
+GetDpiForWindow
+
+// Hotkey (HOT_KEY_MODIFIERS is hand-defined in Win32/VirtualKey.cs)
+RegisterHotKey
+UnregisterHotKey
+WM_HOTKEY
+WM_CLOSE
+WM_DESTROY
+WM_DPICHANGED
+WM_DISPLAYCHANGE
+
+// Non-blocking pump
+PeekMessageW
+PEEK_MESSAGE_REMOVE_TYPE
+
+// Primary monitor sizing
+GetSystemMetrics
+SYSTEM_METRICS_INDEX
+
+// Misc
+GetModuleHandleW
+
+// Diagnostics: confirm bridge / framework didn't strip our ex-styles or
+// inject a child HWND that intercepts input before our WndProc.
+EnumChildWindows
+GetClassNameW
+
+// 5-minute click-through verification path (TEMP — remove after diagnosis):
+// WS_EX_LAYERED + SetLayeredWindowAttributes(LWA_ALPHA) is the only
+// known-good cross-process click-through pairing on Win11.
+SetLayeredWindowAttributes
+LAYERED_WINDOW_ATTRIBUTES_FLAGS
+COLORREF

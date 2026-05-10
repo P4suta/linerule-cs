@@ -1,0 +1,209 @@
+# linerule-cs CI.
+#
+# Policy:
+#   - No `on: schedule` (memory: feedback_no_cron_in_repos). Dependabot is the only scheduled job.
+#   - Every action is SHA-pinned (memory: feedback_prefer_latest_not_pinning); Dependabot bumps weekly.
+#   - Coverage is reported, not gated at 100% (memory: feedback_coverage_is_indicator_not_target).
+#   - Cross-platform jobs run on ubuntu-latest; Windows-runtime jobs on windows-latest.
+
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+  pull-requests: write   # for coverage / dependency-review comments
+  security-events: write # for CodeQL upload
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ─── Build & test on Linux (cross-platform domain) ───
+  build-test-linux:
+    name: build + test (linux)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+
+      - uses: actions/setup-dotnet@c2fa09f4bde5ebb9d1777cf28262a3eb3db3ced7  # v5.2.0
+        with:
+          global-json-file: global.json
+          cache: true
+          cache-dependency-path: '**/packages.lock.json'
+
+      - run: dotnet restore --locked-mode || dotnet restore
+      - run: dotnet build -c Release --no-restore --nologo
+
+      - name: Test (with coverage)
+        run: |
+          dotnet test -c Release --no-build --nologo \
+            --collect:"XPlat Code Coverage" \
+            --results-directory artifacts/test-results \
+            -- DataCollectionRunSettings.DataCollectors.DataCollector.Configuration.Format=cobertura
+
+      - name: Upload coverage artifact
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: coverage-linux
+          path: artifacts/test-results/**/coverage.cobertura.xml
+
+      - name: Coverage summary in PR
+        if: github.event_name == 'pull_request'
+        uses: irongut/CodeCoverageSummary@51cc3a756ddcd398d447c044c02cb6aa83fdae95  # v1.3.0
+        with:
+          filename: artifacts/test-results/**/coverage.cobertura.xml
+          badge: true
+          format: markdown
+          output: both
+          thresholds: '60 80'
+
+      - name: Post coverage comment
+        if: github.event_name == 'pull_request'
+        uses: marocchino/sticky-pull-request-comment@0ea0beb66eb9baf113663a64ec522f60e49231c0  # v3.0.4
+        with:
+          recreate: true
+          path: code-coverage-results.md
+
+  # ─── Build & test on Windows (full stack inc. WinAppSDK runtime) ───
+  build-test-windows:
+    name: build + test (windows)
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+
+      - uses: actions/setup-dotnet@c2fa09f4bde5ebb9d1777cf28262a3eb3db3ced7  # v5.2.0
+        with:
+          global-json-file: global.json
+          cache: true
+          cache-dependency-path: '**/packages.lock.json'
+
+      - run: dotnet restore
+      - run: dotnet build -c Release --no-restore --nologo
+      - run: dotnet test -c Release --no-build --nologo
+
+      - name: Publish (single-file, win-x64)
+        run: |
+          dotnet publish src/Linerule.Cli -c Release -r win-x64 `
+            /p:PublishSingleFile=true /p:SelfContained=true `
+            /p:PublishTrimmed=true `
+            -o artifacts/publish
+
+      - name: Upload binary artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: linerule-win-x64
+          path: artifacts/publish/
+
+  # ─── AOT canary (allowed to fail; tracks WinAppSDK + AOT regressions) ───
+  aot-canary:
+    name: aot canary (windows)
+    runs-on: windows-latest
+    timeout-minutes: 30
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+      - uses: actions/setup-dotnet@c2fa09f4bde5ebb9d1777cf28262a3eb3db3ced7  # v5.2.0
+        with:
+          global-json-file: global.json
+      - run: dotnet publish src/Linerule.Cli -c Release -r win-x64 /p:PublishAot=true -o artifacts/aot
+
+  # ─── Formatters & static analysis ───
+  format:
+    name: format (csharpier + dotnet format)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+      - uses: actions/setup-dotnet@c2fa09f4bde5ebb9d1777cf28262a3eb3db3ced7  # v5.2.0
+        with:
+          global-json-file: global.json
+      - run: dotnet tool restore
+      - run: dotnet csharpier check .
+      - run: dotnet format --verify-no-changes --severity info
+
+  strict-code:
+    name: strict-code (xtask)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+      - uses: actions/setup-dotnet@c2fa09f4bde5ebb9d1777cf28262a3eb3db3ced7  # v5.2.0
+        with:
+          global-json-file: global.json
+      - run: dotnet run --project src/Linerule.XTask -- strict-code
+
+  spell-check:
+    name: typos
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+      - uses: crate-ci/typos@5374cbf686e897b15713110e233094e2874de7ef  # v1.46.1
+
+  actionlint:
+    name: actionlint
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+      - name: actionlint
+        env:
+          ACTIONLINT_VERSION: 1.7.12
+        run: |
+          curl -fsSL "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz" \
+            | tar xz -C /tmp actionlint
+          /tmp/actionlint -color
+
+  # ─── Vulnerable / deprecated package scan ───
+  vuln-check:
+    name: vulnerable + deprecated packages
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+      - uses: actions/setup-dotnet@c2fa09f4bde5ebb9d1777cf28262a3eb3db3ced7  # v5.2.0
+        with:
+          global-json-file: global.json
+      - run: dotnet restore
+      - name: dotnet list package --vulnerable
+        run: |
+          set -euo pipefail
+          OUT=$(dotnet list package --vulnerable --include-transitive 2>&1)
+          echo "$OUT"
+          if echo "$OUT" | grep -q '>'; then
+            echo "::error::vulnerable packages found"
+            exit 1
+          fi
+      - name: dotnet list package --deprecated
+        run: dotnet list package --deprecated --include-transitive
+
+  # ─── Dependency review on PR diffs ───
+  dependency-review:
+    name: dependency review
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+      - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294  # v5.0.0
+        with:
+          fail-on-severity: high
+          comment-summary-in-pr: true
+
+  # ─── Conventional commits enforcement (PR title) ───
+  conventional-commits:
+    name: conventional commits
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+      - uses: wagoid/commitlint-github-action@b948419dd99f3fd78a6548d48f94e3df7f6bf3ed  # v6.2.1

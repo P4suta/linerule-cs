@@ -1,0 +1,47 @@
+version: 2
+
+# Dependabot is the only allowed scheduled job (memory: feedback_no_cron_in_repos).
+# Bumps NuGet weekly; bumps GitHub Actions weekly to the latest SHA pin.
+
+updates:
+  - package-ecosystem: nuget
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
+    groups:
+      analyzers:
+        patterns:
+          - "*Analyzer*"
+          - "Roslynator.*"
+          - "SonarAnalyzer.*"
+          - "Meziantou.*"
+      test:
+        patterns:
+          - "xunit*"
+          - "FsCheck*"
+          - "Verify*"
+          - "coverlet*"
+          - "Microsoft.NET.Test.Sdk"
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      commitlint:
+        patterns:
+          - "@commitlint/*"
+
+  - package-ecosystem: docker
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5

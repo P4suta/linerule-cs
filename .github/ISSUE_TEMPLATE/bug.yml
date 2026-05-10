@@ -1,0 +1,48 @@
+name: Bug report
+description: Something isn't working as documented.
+title: "bug: "
+labels: [bug, triage]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: Concise description of the misbehavior.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Repro steps
+      placeholder: |
+        1. linerule run
+        2. Press Ctrl+Alt+R twice
+        3. ...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: linerule version
+      placeholder: "0.1.0"
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: OS / display
+      placeholder: "Windows 11 23H2, 2 monitors @ 100% / 150%"
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / config
+      description: Paste the relevant slice of `linerule config show` output and any error trace.
+      render: shell

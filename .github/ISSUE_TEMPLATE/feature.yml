@@ -1,0 +1,23 @@
+name: Feature request
+description: Propose a new mode / config knob / behavior.
+title: "feat: "
+labels: [enhancement, triage]
+body:
+  - type: textarea
+    id: motivation
+    attributes:
+      label: What problem does this solve?
+      description: The reading workflow this would unlock.
+    validations:
+      required: true
+  - type: textarea
+    id: design
+    attributes:
+      label: Sketch of the design
+      description: ADT additions / config keys / hotkey changes. Citing ADR numbers welcome.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered

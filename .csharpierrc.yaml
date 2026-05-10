@@ -1,0 +1,6 @@
+# CSharpier — opinionated formatter, deliberately minimal config surface.
+# Strict: no overrides per-file or per-pattern; keep one consistent style.
+printWidth: 120
+useTabs: false
+tabWidth: 4
+endOfLine: lf

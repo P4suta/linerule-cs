@@ -1,0 +1,4 @@
+﻿{
+  Layers: null,
+  IsEmpty: true
+}

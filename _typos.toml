@@ -1,0 +1,47 @@
+# typos — strict spell check across the repo.
+# Fix typos rather than suppress them; the allowlist below is the minimum
+# needed to accommodate technical idioms and TOML/Win32 vocabulary.
+
+[default]
+locale = "en-us"
+
+[default.extend-identifiers]
+# Win32 / WinAppSDK identifiers that contain "intentional misspellings"
+# (e.g. abbreviated forms). Keep this list short.
+HWND_MESSAGE = "HWND_MESSAGE"
+LPARAM = "LPARAM"
+WPARAM = "WPARAM"
+LRESULT = "LRESULT"
+GWL = "GWL"
+HWND = "HWND"
+HMENU = "HMENU"
+PCWSTR = "PCWSTR"
+PCSTR = "PCSTR"
+
+[default.extend-words]
+# "Cli" is our project's casing for "CLI" — accept both directions.
+cli = "cli"
+Cli = "Cli"
+# Japanese romanization tokens that often live in code/comments.
+jis = "jis"
+sjis = "sjis"
+
+[files]
+extend-exclude = [
+    "**/bin/**",
+    "**/obj/**",
+    "**/Generated/**",
+    "**/*.g.cs",
+    "**/*.lock",
+    "**/*.snap",
+    "artifacts/**",
+    ".jj/**",
+    "node_modules/**",
+    "**/CsWin32.json",
+]
+
+[type.toml]
+extend-glob = ["*.toml"]
+
+[type.cs]
+extend-glob = ["*.cs"]

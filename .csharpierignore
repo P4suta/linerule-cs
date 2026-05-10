@@ -1,0 +1,6 @@
+# CSharpier-specific ignore. Use sparingly.
+**/bin/
+**/obj/
+**/Generated/
+**/*.g.cs
+artifacts/

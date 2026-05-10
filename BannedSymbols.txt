@@ -1,0 +1,28 @@
+; linerule-cs banned API list. RS0030 / RS0031 violations are errors.
+; Justifications below the symbol explain *why* — keep when adding new bans.
+
+; ── JSON ──
+; Don't pull Newtonsoft. STJ + source generators only (AOT-friendly).
+T:Newtonsoft.Json.JsonConvert; Use System.Text.Json with [JsonSerializable] source generators (AOT/trim safe).
+
+; Reflection-based STJ overloads break trim/AOT.
+M:System.Text.Json.JsonSerializer.Serialize(System.Object,System.Type,System.Text.Json.JsonSerializerOptions); Use the JsonSerializerContext source-generator overload.
+M:System.Text.Json.JsonSerializer.Deserialize``1(System.String,System.Text.Json.JsonSerializerOptions); Use the JsonSerializerContext source-generator overload.
+
+; ── Reflection / dynamic codegen (AOT-incompatible) ──
+T:System.Reflection.Emit.AssemblyBuilder; AOT-incompatible; designs that need codegen should use source generators.
+T:System.Reflection.Emit.MethodBuilder; AOT-incompatible.
+M:System.Activator.CreateInstance(System.Type); Trim/AOT unsafe; instantiate via typed factory or generic constraint.
+
+; ── Time/locale traps in tests ──
+P:System.DateTime.Now; Use TimeProvider so tests are deterministic.
+P:System.DateTime.UtcNow; Use TimeProvider so tests are deterministic.
+P:System.DateTimeOffset.Now; Use TimeProvider so tests are deterministic.
+P:System.DateTimeOffset.UtcNow; Use TimeProvider so tests are deterministic.
+
+; ── Thread.Sleep — discourage in async code ──
+M:System.Threading.Thread.Sleep(System.Int32); Prefer Task.Delay with CancellationToken.
+M:System.Threading.Thread.Sleep(System.TimeSpan); Prefer Task.Delay with CancellationToken.
+
+; ── Random non-cryptographic without seed ──
+M:System.Random.#ctor; Use Random.Shared (deterministic in tests via seed).

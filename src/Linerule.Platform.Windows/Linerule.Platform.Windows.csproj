@@ -1,0 +1,50 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows10.0.22621.0</TargetFramework>
+    <SupportedOSPlatformVersion>10.0.22621.0</SupportedOSPlatformVersion>
+    <RootNamespace>Linerule.Platform.Windows</RootNamespace>
+    <AssemblyName>Linerule.Platform.Windows</AssemblyName>
+    <Description>Windows-specific platform impl: Win32 click-through overlay + Microsoft.UI.Composition + RegisterHotKey.</Description>
+    <UseWinUI>false</UseWinUI>
+    <UseWPF>false</UseWPF>
+    <UseWindowsForms>false</UseWindowsForms>
+    <EnableMsixTooling>false</EnableMsixTooling>
+    <WindowsAppSdkBootstrapInitialize>false</WindowsAppSdkBootstrapInitialize>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <!--
+      MakePri.exe (resource compiler) is Windows-only x86. Disable every
+      Mrt/Pri-generation knob so the assembly cross-builds in our Linux dev
+      container. We're an unpackaged overlay app — no .pri / app resources
+      needed.
+    -->
+    <AppxGeneratePriEnabled>false</AppxGeneratePriEnabled>
+    <EnableDefaultWindowsAppSdkPRIResourceItems>false</EnableDefaultWindowsAppSdkPRIResourceItems>
+    <ShouldComputeInputPris>false</ShouldComputeInputPris>
+    <!--
+      The 64-bit Win32 Long-Ptr APIs (GetWindowLongPtrW / SetWindowLongPtrW)
+      are only generatable for an explicit CPU target. Pin to x64 for v0.1;
+      arm64 is added once we're ready to build a multi-RID artifact.
+    -->
+    <PlatformTarget>x64</PlatformTarget>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Linerule.Core\Linerule.Core.csproj" />
+    <ProjectReference Include="..\Linerule.Config\Linerule.Config.csproj" />
+    <ProjectReference Include="..\Linerule.Platform\Linerule.Platform.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.WindowsAppSDK" />
+    <PackageReference Include="Microsoft.Windows.SDK.BuildTools" />
+    <PackageReference Include="Microsoft.Windows.CsWin32">
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Linerule.Platform.Windows.Tests" />
+  </ItemGroup>
+
+</Project>

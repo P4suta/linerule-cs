@@ -1,0 +1,10 @@
+name: linerule-cs CodeQL config
+
+queries:
+  - uses: security-and-quality
+
+paths-ignore:
+  - '**/bin/**'
+  - '**/obj/**'
+  - '**/Generated/**'
+  - 'artifacts/**'

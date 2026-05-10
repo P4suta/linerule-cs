@@ -1,0 +1,47 @@
+# .NET / VS / Rider
+bin/
+obj/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+.vs/
+.vscode/
+.idea/
+*.swp
+*.bak
+
+# Build output / artifacts
+artifacts/
+TestResults/
+coverage/
+*.coverage
+*.coveragexml
+**/coverage.cobertura.xml
+**/coverage.opencover.xml
+*.trx
+
+# Publish
+publish/
+*.pubxml.user
+
+# NuGet
+*.nupkg
+*.snupkg
+.nuget/
+packages/
+
+# In-workspace caches (compose.yml routes NUGET_PACKAGES / DOTNET_CLI_HOME / NPM_CONFIG_CACHE here).
+.cache/
+
+# AOT / native
+*.pdb
+*.dbg
+*.dwarf
+
+# OS
+.DS_Store
+Thumbs.db
+
+# jj / git
+.jj/

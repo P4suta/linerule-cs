@@ -1,0 +1,10 @@
+# Default owner for everything.
+* @P4suta
+
+# Architecture-affecting files require extra scrutiny — same owner today,
+# but listed explicitly so future co-maintainers can be added piecewise.
+/Directory.Build.props @P4suta
+/Directory.Packages.props @P4suta
+/.editorconfig @P4suta
+/.github/ @P4suta
+/docs/adr/ @P4suta
