@@ -1,7 +1,7 @@
 using System;
 using System.Numerics;
 using Linerule.Platform.Windows.Diagnostics;
-using Microsoft.UI.Composition;
+using Windows.UI.Composition;
 
 namespace Linerule.Platform.Windows.Hud;
 

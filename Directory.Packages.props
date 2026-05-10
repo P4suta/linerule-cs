@@ -14,10 +14,12 @@
     <PackageVersion Include="Microsoft.WindowsAppSDK" Version="2.0.1" />
     <PackageVersion Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.28000.1839" />
     <PackageVersion Include="Microsoft.Windows.CsWin32" Version="0.3.275" />
-    <!-- Win2D — DirectWrite-backed text + Direct2D drawing into Composition
-         surfaces. Used by Linerule.Platform.Windows.Hud to render the
-         always-on top-right status panel. -->
-    <PackageVersion Include="Microsoft.Graphics.Win2D" Version="1.4.0" />
+    <!-- Direct2D + DirectWrite + Direct3D11 + DXGI は Microsoft.Windows.CsWin32
+         が NativeMethods.txt から source-gen する。HUD は
+         ICompositionDrawingSurfaceInterop.BeginDraw(IID_ID2D1DeviceContext)
+         経由で D2D を Composition surface に描画する — ADR-0009 v3 参照。
+         third-party binding (Vortice / SharpDX 等) は不使用。Microsoft.Graphics.Win2D
+         は Windows.UI.Composition と非互換のため drop した。 -->
   </ItemGroup>
 
   <ItemGroup Label="App">

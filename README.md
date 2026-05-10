@@ -1,12 +1,12 @@
 # linerule-cs
 
-Reading-ruler overlay for Windows. C# / .NET 10 + Windows App SDK 2.0 + Microsoft.UI.Composition. The C# dual of [`linerule`](../linerule/) (Rust / winit / vello / wgpu / peniko).
+Reading-ruler overlay for Windows. C# / .NET 10 + Windows App SDK 2.0 + Windows.UI.Composition (via the PowerToys `ICompositorDesktopInterop` pattern). The C# dual of [`linerule`](../linerule/) (Rust / winit / vello / wgpu / peniko).
 
 ## Why this exists
 
 `linerule` (Rust) ships v0.1 with a `LWA_COLORKEY` workaround — `wgpu` doesn't expose DirectComposition, so per-pixel alpha is faked by routing pure black to transparent and shifting the dim mask to near-black `(8,8,8)`. The architectural cost is a lie in `Rgba::DefaultMask`.
 
-`Microsoft.UI.Composition` sits directly on DirectComposition. With `WS_EX_NOREDIRECTIONBITMAP` + `Compositor.CreateDesktopWindowTarget`, true per-pixel alpha is available on Day 1 and `Rgba.DefaultMask` is restored to pure black `(0,0,0,0xCC)`.
+`Windows.UI.Composition.Compositor` + `ICompositorDesktopInterop.CreateDesktopWindowTarget` sits directly on DirectComposition. With `WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_NOREDIRECTIONBITMAP` (LAYERED owns cross-process click routing, NOREDIRECTIONBITMAP keeps DComp draw direct), true per-pixel alpha is available on Day 1 and `Rgba.DefaultMask` is restored to pure black `(0,0,0,0xCC)`. See [ADR-0009 v3](docs/adr/0009-transparency-via-dcomp.md) for the empirical trail.
 
 This is the architectural payoff that justifies the rewrite. The two implementations coexist as parallel ports; neither is freezing.
 

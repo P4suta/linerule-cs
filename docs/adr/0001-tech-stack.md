@@ -7,7 +7,7 @@
 
 linerule-cs is the C# / .NET dual of the Rust [linerule](../../../linerule/) project. The two implementations coexist; neither is the canonical one. C# was chosen for the Windows side because:
 
-- `Microsoft.UI.Composition` rides DirectComposition. Day 1 true per-pixel alpha (see ADR-0009) — this is the architectural payoff.
+- `Windows.UI.Composition` (the system Composition stack) rides DirectComposition. Day 1 true per-pixel alpha via the PowerToys `ICompositorDesktopInterop` pattern (see ADR-0009 v3) — this is the architectural payoff.
 - The `windows` Rust crate's churn around handle interop and `SetWindowDisplayAffinity` is gone.
 - `wgpu` couldn't expose DComp for the Rust side; in C# / WinAppSDK the substrate is native.
 
@@ -17,20 +17,20 @@ linerule-cs is the C# / .NET dual of the Rust [linerule](../../../linerule/) pro
 |---|---|---|
 | Runtime | .NET 10 LTS | Active LTS, AOT improving, support window 2026–2028. |
 | App framework | Windows App SDK 2.0 | The 2026 mainstream Windows desktop stack. |
-| Render | `Microsoft.UI.Composition` (no XAML for the overlay HWND) | Visual tree IS the OverlayFrame ADT — minimal layer between domain and pixels. |
+| Render | `Windows.UI.Composition` via `ICompositorDesktopInterop` (PowerToys MouseHighlighter pattern, no XAML, no `ContentIsland`) | Visual tree IS the OverlayFrame ADT — minimal layer between domain and pixels. |
 | Win32 P/Invoke | `Microsoft.Windows.CsWin32` source generator | Microsoft-supported, no hand-rolled DllImport. |
 | Config | Tomlyn 2.x | Round-trip with the Rust `config.toml`; preserves comment trivia; surfaces span info. |
 | CLI | `System.CommandLine` 2.x | Mainstream, AOT-aware. |
 | Console UI | Spectre.Console | Squiggle-style diagnostic rendering. |
 | Tests | xUnit v3 + FsCheck v3 + Verify v31 + Coverlet 10 | The 2026 .NET test pipeline. |
 
-WinAppSDK's `Microsoft.UI.Composition.Compositor.CreateDesktopWindowTarget(WindowId, isTopmost: true)` is the documented way to host a Composition tree inside a non-XAML HWND. The bootstrapper (`Bootstrap.Initialize(0x00020000)`) is mandatory before any `Microsoft.UI.*` call (see also `WindowsAppRuntimeBootstrap`).
+`Windows.UI.Composition.Compositor` + `ICompositorDesktopInterop.CreateDesktopWindowTarget(HWND, isTopmost, out DesktopWindowTarget)` is the production-tested way (PowerToys, `Windows.UI.Composition-Win32-Samples`) to host a Composition tree inside a non-XAML HWND with `WS_EX_LAYERED`. The WinAppSDK bootstrapper (`Bootstrap.Initialize(0x00020000)`, wrapped by `WindowsAppRuntimeBootstrap`) is still required — Win2D 1.4 and `Microsoft.UI.Dispatching.DispatcherQueueController` both live in the WinAppSDK projection and need the runtime bootstrapped before first use.
 
 ## Rejected alternatives
 
 - **WPF**: viable, but the XAML compositor and `AllowsTransparency=true` are heavier than the bare HWND + Composition tree, and the architectural correspondence to OverlayFrame is muddied by `Rectangle` elements.
 - **Avalonia**: cross-platform, but this is a Windows-only MVP; the cross-platform layer is overhead.
-- **Bare Win32 + Direct2D + DComp via Vortice**: closest in spirit to the Rust stack, but Microsoft.UI.Composition gives the same result with less ceremony and is the supported path.
+- **Bare Win32 + Direct2D + DComp via Vortice**: closest in spirit to the Rust stack, but the `Windows.UI.Composition` + `ICompositorDesktopInterop` pattern PowerToys ships gives the same result with less ceremony and is the production-tested path.
 
 ## Consequences
 

@@ -4,15 +4,18 @@
     <SupportedOSPlatformVersion>10.0.22621.0</SupportedOSPlatformVersion>
     <RootNamespace>Linerule.Platform.Windows</RootNamespace>
     <AssemblyName>Linerule.Platform.Windows</AssemblyName>
-    <Description>Windows-specific platform impl: Win32 click-through overlay + Microsoft.UI.Composition + RegisterHotKey.</Description>
+    <Description>Windows-specific platform impl: Win32 click-through overlay + Windows.UI.Composition + RegisterHotKey.</Description>
     <!--
-      UseWinUI=true is required to project Microsoft.Graphics.Win2D's WinRT
-      types (CanvasDevice / CompositionGraphicsDevice / CanvasTextFormat / …)
-      under Microsoft.UI.Composition. The entry point is still our pure Win32
-      + Composition path; UseWinUI here only flips on the cswinrt projection
-      generation for the WinUI flavor of WindowsAppSDK.
+      UseWinUI=false because the overlay uses Windows.UI.Composition (system,
+      not Microsoft.UI.Composition) via ICompositorDesktopInterop — the
+      PowerToys MouseHighlighter pattern, the canonical click-through
+      transparent overlay path on Windows (see ADR-0009 v3). HUD rendering
+      is Direct2D + DirectWrite directly into a CompositionDrawingSurface
+      via ICompositionDrawingSurfaceInterop; Direct2D / DirectWrite /
+      Direct3D11 / DXGI types are source-gen'd by Microsoft.Windows.CsWin32
+      (see NativeMethods.txt). No Microsoft.Graphics.Win2D dependency.
     -->
-    <UseWinUI>true</UseWinUI>
+    <UseWinUI>false</UseWinUI>
     <UseWPF>false</UseWPF>
     <UseWindowsForms>false</UseWindowsForms>
     <EnableMsixTooling>false</EnableMsixTooling>
@@ -34,12 +37,18 @@
     -->
     <PlatformTarget>x64</PlatformTarget>
     <!--
-      Win2D's targets emit WIN2D0001 when AnyCPU is detected; PlatformTarget
-      above sets x64 explicitly. The warning checks `$(Platform)` (different
-      property, not always set in modern SDK-style projects) so we suppress
-      the redundant warn — actual binary IS x64 per RID + PlatformTarget.
+      ADR-0010: AOT publish is aspirational, not Day-1. The HUD's CsWin32-generated
+      Direct2D / DirectWrite / Direct3D11 P/Invokes use `[MarshalAs(UnmanagedType.IUnknown)] out object`
+      and `[ComImport]` interfaces with runtime COM marshaling — both flag IL2050 / SYSLIB1096
+      under the AOT analyzer. The full Microsoft-pure HUD architecture (ADR-0009 v3) needs
+      this code shape; switching to `[GeneratedComInterface]` everywhere would either require
+      raw-IntPtr marshaling of WinRT projected types (DesktopWindowTarget /
+      CompositionGraphicsDevice) or rewriting CsWin32's generated code. The CLI assembly
+      already opts out (Linerule.Cli.csproj) because System.CommandLine is reflection-heavy.
+      Until ADR-0010 is closed, Platform.Windows opts out too. The pure .NET code paths in
+      Linerule.Core / Linerule.Config remain `IsAotCompatible=true` via Directory.Build.props.
     -->
-    <Win2DWarnNoPlatform>false</Win2DWarnNoPlatform>
+    <IsAotCompatible>false</IsAotCompatible>
   </PropertyGroup>
 
   <ItemGroup>
@@ -54,7 +63,6 @@
     <PackageReference Include="Microsoft.Windows.CsWin32">
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
-    <PackageReference Include="Microsoft.Graphics.Win2D" />
   </ItemGroup>
 
   <ItemGroup>

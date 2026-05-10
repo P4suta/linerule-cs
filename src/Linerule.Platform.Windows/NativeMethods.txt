@@ -67,3 +67,48 @@ GetClassNameW
 EnumDisplaySettingsW
 DEVMODEW
 ENUM_DISPLAY_SETTINGS_MODE
+
+// HUD rendering pipeline (ADR-0009 v3): Direct2D + DirectWrite drawing
+// into a Windows.UI.Composition.CompositionDrawingSurface via the
+// ICompositionDrawingSurfaceInterop COM ABI. Win32 metadata types listed
+// below are projected by Microsoft.Windows.CsWin32 into
+// Windows.Win32.Graphics.{Direct2D, DirectWrite, Direct3D11, Dxgi}.*.
+
+// Direct2D — surface drawing primitives.
+D2D1CreateFactory
+ID2D1Factory1
+ID2D1Device
+ID2D1DeviceContext
+ID2D1SolidColorBrush
+D2D1_FACTORY_TYPE
+D2D1_FACTORY_OPTIONS
+D2D1_ROUNDED_RECT
+D2D1_DRAW_TEXT_OPTIONS
+D2D_RECT_F
+D2D_POINT_2F
+D2D1_COLOR_F
+D2D1_BRUSH_PROPERTIES
+
+// DirectWrite — text format + layout.
+DWriteCreateFactory
+IDWriteFactory
+IDWriteTextFormat
+IDWriteTextLayout
+DWRITE_FACTORY_TYPE
+DWRITE_FONT_WEIGHT
+DWRITE_FONT_STYLE
+DWRITE_FONT_STRETCH
+DWRITE_WORD_WRAPPING
+DWRITE_TEXT_ALIGNMENT
+DWRITE_PARAGRAPH_ALIGNMENT
+DWRITE_TEXT_METRICS
+
+// Direct3D11 + DXGI — ID3D11Device → IDXGIDevice → ID2D1Device chain
+// (BgraSupport flag required for D2D interop).
+D3D11CreateDevice
+ID3D11Device
+D3D11_CREATE_DEVICE_FLAG
+D3D_DRIVER_TYPE
+D3D_FEATURE_LEVEL
+D3D11_SDK_VERSION
+IDXGIDevice

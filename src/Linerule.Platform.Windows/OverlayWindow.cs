@@ -7,10 +7,9 @@ using Linerule.Core;
 using Linerule.Platform;
 using Linerule.Platform.Windows.Diagnostics;
 using Linerule.Platform.Windows.Win32;
-using Microsoft.UI;
-using Microsoft.UI.Composition;
-using Microsoft.UI.Content;
 using Microsoft.UI.Dispatching;
+using Windows.UI.Composition;
+using Windows.UI.Composition.Desktop;
 using Windows.Win32;
 using Windows.Win32.Foundation;
 using Windows.Win32.UI.WindowsAndMessaging;
@@ -18,19 +17,33 @@ using Windows.Win32.UI.WindowsAndMessaging;
 namespace Linerule.Platform.Windows;
 
 /// <summary>
-/// Top-most, click-through, true-per-pixel-alpha overlay on the modern
-/// WinAppSDK 2.x stack: <see cref="Microsoft.UI.Composition.Compositor"/> +
-/// <see cref="ContentIsland"/> + <see cref="DesktopAttachedSiteBridge"/>.
+/// Top-most, click-through, true-per-pixel-alpha overlay built on the
+/// canonical PowerToys MouseHighlighter pattern:
+/// <see cref="Windows.UI.Composition.Compositor"/> +
+/// <see cref="ICompositorDesktopInterop"/> +
+/// <see cref="DesktopWindowTarget"/>.
 ///
 /// <para>
-/// <b>HWND ex-style</b>: <c>WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW | WS_EX_TOPMOST</c>.
-/// DWM uses the layered window's redirection bitmap as the composition target —
-/// Composition renders into it and DWM composites with per-pixel alpha to the
-/// desktop; <c>WS_EX_TRANSPARENT</c> routes <c>WM_NCHITTEST</c> + clicks through to
-/// the window beneath. <see cref="SetLayeredWindowAttributes"/> /
-/// <see cref="UpdateLayeredWindow"/> are NOT used — those are the legacy GDI
-/// pathways. See ADR-0009 v2 for the reasoning + the empirical click-through
-/// evidence (2026-05-11).
+/// <b>HWND ex-style</b>: <c>WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_NOREDIRECTIONBITMAP | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW | WS_EX_TOPMOST</c>.
+/// LAYERED and NOREDIRECTIONBITMAP coexist — LAYERED keeps DWM in the
+/// click-routing path so <c>WS_EX_TRANSPARENT</c> can deliver cross-process
+/// click-through, while NOREDIRECTIONBITMAP lets DirectComposition write
+/// directly to its own GPU surface (no GDI redirection bitmap, full
+/// per-pixel alpha). <c>SetLayeredWindowAttributes</c> and
+/// <c>UpdateLayeredWindow</c> are deliberately NOT used — those are the
+/// legacy GDI pathways (LWA_COLORKEY / LWA_ALPHA); Composition owns the
+/// surface and DWM composites it.
+/// </para>
+///
+/// <para>
+/// <b>Composition attachment</b>: we QI <see cref="ICompositorDesktopInterop"/>
+/// off a fresh <c>Windows.UI.Composition.Compositor</c> and call
+/// <c>CreateDesktopWindowTarget(hwnd, isTopmost: false, …)</c>. NO
+/// <c>ContentIsland</c>, NO <c>DesktopAttachedSiteBridge</c>: that path
+/// belongs to Microsoft.UI.Composition + WinUI 3 island hosting and
+/// wedges natively on <c>WS_EX_LAYERED</c> HWNDs in WinAppSDK 2.0
+/// (verified 2026-05-11). See ADR-0009 v3 for the empirical trail and
+/// the canonical PowerToys reference.
 /// </para>
 /// </summary>
 public sealed class OverlayWindow : IOverlaySurface
@@ -43,8 +56,7 @@ public sealed class OverlayWindow : IOverlaySurface
     private static WNDPROC? _wndProcKeepAlive;
 
     private readonly HWND _hwnd;
-    private readonly DesktopAttachedSiteBridge _bridge;
-    private readonly ContentIsland _island;
+    private readonly DesktopWindowTarget _target;
     private readonly ContainerVisual _root;
     private readonly CompositionRenderer _renderer;
     private bool _disposed;
@@ -78,16 +90,14 @@ public sealed class OverlayWindow : IOverlaySurface
     private OverlayWindow(
         HWND hwnd,
         Compositor compositor,
-        DesktopAttachedSiteBridge bridge,
-        ContentIsland island,
+        DesktopWindowTarget target,
         ContainerVisual root,
         ScreenRect<Logical> monitor
     )
     {
         _hwnd = hwnd;
         Compositor = compositor;
-        _bridge = bridge;
-        _island = island;
+        _target = target;
         _root = root;
         _renderer = new CompositionRenderer(compositor, root);
         MonitorBounds = monitor;
@@ -105,8 +115,8 @@ public sealed class OverlayWindow : IOverlaySurface
         Log.Info("CreateWindowExW ok", new LogField("hwnd", HexHwnd(hwnd)));
         ExStyleSnapshot.Capture(hwnd, "after CreateWindowExW", Log);
 
-        var (compositor, bridge, island, root) = AttachBridgeAndIsland(hwnd, queue);
-        ExStyleSnapshot.Capture(hwnd, "after bridge.Connect", Log);
+        var (compositor, target, root) = AttachDesktopWindowTarget(hwnd);
+        ExStyleSnapshot.Capture(hwnd, "after CreateDesktopWindowTarget", Log);
 
         // ShowWindow's BOOL return is the previous show state, not a success
         // flag — go through CheckLastError so we only warn on a real fault.
@@ -115,33 +125,37 @@ public sealed class OverlayWindow : IOverlaySurface
         Log.Info("ShowWindow ok — overlay live");
         ExStyleSnapshot.Capture(hwnd, "after ShowWindow", Log);
 
-        return new OverlayWindow(hwnd, compositor, bridge, island, root, monitor);
+        return new OverlayWindow(hwnd, compositor, target, root, monitor);
     }
 
     private static unsafe HWND CreateHwnd(ScreenRect<Logical> monitor)
     {
-        // Modern click-through + per-pixel alpha pairing (ADR-0009 v2):
+        // Click-through + per-pixel alpha pairing (ADR-0009 v3, PowerToys
+        // MouseHighlighter pattern):
         //
-        //   WS_EX_LAYERED       — DWM uses the redirection bitmap; Composition
-        //                         renders into it; DWM composites per-pixel
-        //                         alpha to the desktop. NO SetLayeredWindowAttributes
-        //                         call (those are LWA_COLORKEY / LWA_ALPHA — the
-        //                         legacy GDI pathway). NO UpdateLayeredWindow
-        //                         (the same legacy pathway). DWM owns the surface.
-        //   WS_EX_TRANSPARENT   — DWM routes WM_NCHITTEST + clicks through to the
-        //                         window beneath. Verified empirically 2026-05-11.
-        //   WS_EX_NOACTIVATE    — overlay never grabs focus on click anomalies.
-        //   WS_EX_TOOLWINDOW    — no taskbar entry / Alt-Tab presence.
-        //   WS_EX_TOPMOST       — stays above normal windows.
-        //
-        // Deliberately NOT included:
-        //   WS_EX_NOREDIRECTIONBITMAP — would bypass DWM's redirection surface
-        //                                and break BOTH per-pixel alpha
-        //                                composition AND cross-process click-through.
-        //                                See ADR-0009 v2 / commit history.
+        //   WS_EX_LAYERED            — DWM is in the windowing path; routes
+        //                              WM_NCHITTEST + clicks through to the
+        //                              window beneath when paired with
+        //                              WS_EX_TRANSPARENT. NO LWA_* call —
+        //                              Composition writes the surface; the
+        //                              legacy SetLayeredWindowAttributes
+        //                              GDI pathway is deliberately unused.
+        //   WS_EX_TRANSPARENT        — cross-process click-through hint.
+        //   WS_EX_NOREDIRECTIONBITMAP — DComp draws directly to its own GPU
+        //                              surface; DWM composites with per-pixel
+        //                              alpha. No GDI redirection bitmap.
+        //                              LAYERED and NOREDIRECTIONBITMAP are
+        //                              NOT mutually exclusive — they ship
+        //                              together in PowerToys; LAYERED owns
+        //                              click routing, NOREDIRECTIONBITMAP
+        //                              owns the rendering path.
+        //   WS_EX_NOACTIVATE         — overlay never grabs focus on click anomalies.
+        //   WS_EX_TOOLWINDOW         — no taskbar entry / Alt-Tab presence.
+        //   WS_EX_TOPMOST            — stays above normal windows.
         const WINDOW_EX_STYLE ex =
             WINDOW_EX_STYLE.WS_EX_LAYERED
             | WINDOW_EX_STYLE.WS_EX_TRANSPARENT
+            | WINDOW_EX_STYLE.WS_EX_NOREDIRECTIONBITMAP
             | WINDOW_EX_STYLE.WS_EX_NOACTIVATE
             | WINDOW_EX_STYLE.WS_EX_TOOLWINDOW
             | WINDOW_EX_STYLE.WS_EX_TOPMOST;
@@ -175,63 +189,38 @@ public sealed class OverlayWindow : IOverlaySurface
 
     private static unsafe (
         Compositor Compositor,
-        DesktopAttachedSiteBridge Bridge,
-        ContentIsland Island,
+        DesktopWindowTarget Target,
         ContainerVisual Root
-    ) AttachBridgeAndIsland(HWND hwnd, DispatcherQueue queue)
+    ) AttachDesktopWindowTarget(HWND hwnd)
     {
-        var bridgeLog = Logger.For(Subsystems.Bridge);
         var compLog = Logger.For(Subsystems.Composition);
 
-        var windowId = Win32Interop.GetWindowIdFromWindow((nint)hwnd.Value);
-        bridgeLog.Debug("GetWindowIdFromWindow ok", new LogField("id", $"0x{windowId.Value:X}"));
-
-        // Modern WinAppSDK 2.x path (per docs 2026-04): Microsoft.UI.Composition
-        // throughout. ContentIsland.Create takes a Microsoft.UI.Composition.Visual,
-        // not the legacy Windows.UI.Composition variant. This unblocks Win2D
-        // (also Microsoft.UI-based) so the HUD shares the same visual tree.
+        // The DispatcherQueue established on this thread by
+        // WindowsApp.RunCoreAsync (Microsoft.UI.Dispatching.DispatcherQueueController.CreateOnCurrentThread)
+        // satisfies Windows.UI.Composition.Compositor's CoreMessaging
+        // prerequisite — both projections share the underlying queue.
         var compositor = new Compositor();
-        compLog.Info("Microsoft.UI.Composition.Compositor created");
+        compLog.Info("Windows.UI.Composition.Compositor created");
 
-        var root = compositor.CreateContainerVisual();
-        // RelativeSizeAdjustment(1, 1) makes the root fill its parent (the island).
-        // Without this, the root visual has zero size — `ContentIsland.Create`
-        // accepts it but `bridge.Connect(island)` then wedges in native code
-        // on a zero-size composition target. Cf. WindowsAppSDK-Samples
-        // Islands/UXFrameworksOnIslands/LiftedFrame.cpp (the canonical
-        // ContentIsland.Create wiring).
-        root.RelativeSizeAdjustment = new System.Numerics.Vector2(1.0f, 1.0f);
-        var island = ContentIsland.Create(root);
-        compLog.Info("ContentIsland.Create ok");
-
-        var bridge = DesktopAttachedSiteBridge.CreateFromWindowId(queue, windowId);
-        bridgeLog.Info("DesktopAttachedSiteBridge.CreateFromWindowId ok");
-
-        bridge.ProcessesPointerInput = false;
-        bridge.ProcessesKeyboardInput = false;
-        bridgeLog.Info(
-            "click-through knob set",
-            new LogField("processes_pointer_input", Value: false),
-            new LogField("processes_keyboard_input", Value: false)
-        );
-
-        bridgeLog.Info("bridge.Connect(island) about to call");
+        var interop = (ICompositorDesktopInterop)(object)compositor;
+        interop.CreateDesktopWindowTarget((nint)hwnd.Value, isTopmost: false, out var targetPtr);
+        DesktopWindowTarget target;
         try
         {
-            bridge.Connect(island);
-            bridgeLog.Info("bridge.Connect(island) ok");
+            target = (DesktopWindowTarget)Marshal.GetObjectForIUnknown(targetPtr);
         }
-        catch (Exception ex)
+        finally
         {
-            bridgeLog.Error(
-                "bridge.Connect(island) threw",
-                ex,
-                new LogField("type", ex.GetType().FullName ?? "?"),
-                new LogField("hresult", $"0x{ex.HResult:X8}"));
-            throw;
+            Marshal.Release(targetPtr);
         }
+        compLog.Info("DesktopWindowTarget bound to HWND");
 
-        return (compositor, bridge, island, root);
+        var root = compositor.CreateContainerVisual();
+        root.RelativeSizeAdjustment = new System.Numerics.Vector2(1.0f, 1.0f);
+        target.Root = root;
+        compLog.Info("root visual attached");
+
+        return (compositor, target, root);
     }
 
     public void Apply(OverlayFrame frame) => _renderer.Apply(frame);
@@ -248,8 +237,7 @@ public sealed class OverlayWindow : IOverlaySurface
         }
 
         Log.Info("dispose begin");
-        _bridge.Dispose();
-        _island.Dispose();
+        _target.Dispose();
         Compositor.Dispose();
         Win32Guard.Check(PInvoke.DestroyWindow(_hwnd), "DestroyWindow overlay", Log);
         _disposed = true;
@@ -318,9 +306,8 @@ public sealed class OverlayWindow : IOverlaySurface
     /// <summary>
     /// WndProc body. Click-through stack:
     /// <list type="number">
-    ///   <item><c>WS_EX_TRANSPARENT</c> on the HWND (cursor pass-through hint)</item>
-    ///   <item><c>bridge.ProcessesPointerInput = false</c></item>
-    ///   <item><c>WM_NCHITTEST → HTTRANSPARENT</c> (this handler)</item>
+    ///   <item><c>WS_EX_LAYERED + WS_EX_TRANSPARENT</c> on the HWND (DWM-level routing)</item>
+    ///   <item><c>WM_NCHITTEST → HTTRANSPARENT</c> (this handler — belt and braces)</item>
     /// </list>
     /// Diagnostic counters: <c>_nchitCount</c> increments on every NCHITTEST
     /// hit (logged at TRACE with sampling); <c>_clickCount</c> increments

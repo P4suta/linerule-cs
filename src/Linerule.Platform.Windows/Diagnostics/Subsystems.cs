@@ -17,7 +17,6 @@ public static class Subsystems
     public const string TaskSchedulerSink = "TaskScheduler";
     public const string Win32 = "Win32";
     public const string Composition = "Composition";
-    public const string Bridge = "Bridge";
     public const string WndProc = "WndProc";
     public const string Heartbeat = "Heartbeat";
     public const string CrashDump = "CrashDump";

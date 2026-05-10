@@ -22,6 +22,9 @@ PCSTR = "PCSTR"
 # "Cli" is our project's casing for "CLI" — accept both directions.
 cli = "cli"
 Cli = "Cli"
+# .NET namespace `System.Runtime.InteropServices.Marshalling` uses British
+# spelling officially; this is the AOT-friendly source-gen COM API surface.
+Marshalling = "Marshalling"
 # Japanese romanization tokens that often live in code/comments.
 jis = "jis"
 sjis = "sjis"
