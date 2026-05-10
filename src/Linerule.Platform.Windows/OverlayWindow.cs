@@ -215,8 +215,21 @@ public sealed class OverlayWindow : IOverlaySurface
             new LogField("processes_keyboard_input", Value: false)
         );
 
-        bridge.Connect(island);
-        bridgeLog.Info("bridge.Connect(island) ok");
+        bridgeLog.Info("bridge.Connect(island) about to call");
+        try
+        {
+            bridge.Connect(island);
+            bridgeLog.Info("bridge.Connect(island) ok");
+        }
+        catch (Exception ex)
+        {
+            bridgeLog.Error(
+                "bridge.Connect(island) threw",
+                ex,
+                new LogField("type", ex.GetType().FullName ?? "?"),
+                new LogField("hresult", $"0x{ex.HResult:X8}"));
+            throw;
+        }
 
         return (compositor, bridge, island, root);
     }
