@@ -33,16 +33,16 @@ public sealed class CursorTracker(uint dpi) : IMouseTracker
                 var (err, name) = Win32Guard.LastError();
                 Log.Warn(
                     "GetCursorPos failed",
-                    new("count", n),
-                    new("err", err),
-                    new("err_name", name));
+                    new LogField("count", n),
+                    new LogField("err", err),
+                    new LogField("err_name", name));
             }
             return null;
         }
 
         if (_failureCount > 0)
         {
-            Log.Info("GetCursorPos recovered", new("prior_failures", _failureCount));
+            Log.Info("GetCursorPos recovered", new LogField("prior_failures", _failureCount));
             _failureCount = 0;
         }
 

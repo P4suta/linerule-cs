@@ -71,7 +71,7 @@ public sealed class HotkeyHost : IHotkeyHost
 
             var host = new HotkeyHost(hwnd);
             _hostByHwnd[(nint)hwnd.Value] = host;
-            Log.Info("created", new("hwnd", $"0x{(nint)hwnd.Value:X}"));
+            Log.Info("created", new LogField("hwnd", $"0x{(nint)hwnd.Value:X}"));
             return host;
         }
     }
@@ -100,10 +100,10 @@ public sealed class HotkeyHost : IHotkeyHost
             var (err, name) = Win32Guard.LastError();
             Log.Warn(
                 "RegisterHotKey failed",
-                new("id", id),
-                new("chord", chord.ToString() ?? "?"),
-                new("err", err),
-                new("err_name", name));
+                new LogField("id", id),
+                new LogField("chord", chord.ToString() ?? "?"),
+                new LogField("err", err),
+                new LogField("err_name", name));
             return Result.Err<Unit, HotkeyError>(new HotkeyError.OsRefused(chord, err));
         }
 
@@ -111,9 +111,9 @@ public sealed class HotkeyHost : IHotkeyHost
         _chordToId[chord] = id;
         Log.Debug(
             "RegisterHotKey ok",
-            new("id", id),
-            new("chord", chord.ToString() ?? "?"),
-            new("action", action.GetType().Name));
+            new LogField("id", id),
+            new LogField("chord", chord.ToString() ?? "?"),
+            new LogField("action", action.GetType().Name));
         return Result.Ok<Unit, HotkeyError>(Unit.Value);
     }
 
@@ -130,7 +130,7 @@ public sealed class HotkeyHost : IHotkeyHost
             return ValueTask.CompletedTask;
         }
 
-        Log.Debug("dispose begin", new("registered", _idToAction.Count));
+        Log.Debug("dispose begin", new LogField("registered", _idToAction.Count));
         foreach (var id in _idToAction.Keys)
         {
             Win32Guard.Check(

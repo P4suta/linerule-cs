@@ -62,10 +62,10 @@ internal static class Win32Guard
         var err = Marshal.GetLastWin32Error();
         log.Warn(
             "win32 failure",
-            new("op", operation),
-            new("err", err),
-            new("err_name", DecodeName(err)),
-            new("caller", $"{caller ?? "?"}:{line}"));
+            new LogField("op", operation),
+            new LogField("err", err),
+            new LogField("err_name", DecodeName(err)),
+            new LogField("caller", $"{caller ?? "?"}:{line}"));
         return false;
     }
 
@@ -90,10 +90,10 @@ internal static class Win32Guard
         log.Error(
             "win32 fatal",
             ex: null,
-            new("op", operation),
-            new("err", err),
-            new("err_name", name),
-            new("caller", $"{caller ?? "?"}:{line}"));
+            new LogField("op", operation),
+            new LogField("err", err),
+            new LogField("err_name", name),
+            new LogField("caller", $"{caller ?? "?"}:{line}"));
         throw new Win32Exception(err, $"{operation}: {name} (0x{err:X8})");
     }
 
@@ -117,10 +117,10 @@ internal static class Win32Guard
         log.Error(
             "win32 handle null",
             ex: null,
-            new("op", operation),
-            new("err", err),
-            new("err_name", name),
-            new("caller", $"{caller ?? "?"}:{line}"));
+            new LogField("op", operation),
+            new LogField("err", err),
+            new LogField("err_name", name),
+            new LogField("caller", $"{caller ?? "?"}:{line}"));
         throw new Win32Exception(err, $"{operation}: returned NULL — {name} (0x{err:X8})");
     }
 
@@ -142,9 +142,9 @@ internal static class Win32Guard
         log.Error(
             "hresult failure",
             ex: null,
-            new("op", operation),
-            new("hr", $"0x{hr:X8}"),
-            new("caller", $"{caller ?? "?"}:{line}"));
+            new LogField("op", operation),
+            new LogField("hr", $"0x{hr:X8}"),
+            new LogField("caller", $"{caller ?? "?"}:{line}"));
         Marshal.ThrowExceptionForHR(hr);
     }
 

@@ -48,17 +48,17 @@ public sealed class Heartbeat : IDisposable
             var fields = _snapshot();
             if (fields is null || fields.Length == 0)
             {
-                _log.Trace("alive", new("seq", seq));
+                _log.Trace("alive", new LogField("seq", seq));
                 return;
             }
             var combined = new LogField[fields.Length + 1];
-            combined[0] = new("seq", seq);
+            combined[0] = new LogField("seq", seq);
             Array.Copy(fields, 0, combined, 1, fields.Length);
             _log.Trace("alive", combined);
         }
         catch (Exception ex)
         {
-            _log.Warn("snapshot threw", new("type", ex.GetType().FullName ?? "?"), new("msg", ex.Message));
+            _log.Warn("snapshot threw", new LogField("type", ex.GetType().FullName ?? "?"), new LogField("msg", ex.Message));
         }
     }
 

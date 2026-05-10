@@ -29,8 +29,8 @@ public static class WindowsApp
 
         Log.Info(
             "RunAsync begin",
-            new("jsonl", Logger.LogPath),
-            new("run_id", Logger.RunId.ToString("D")));
+            new LogField("jsonl", Logger.LogPath),
+            new LogField("run_id", Logger.RunId.ToString("D")));
 
         try
         {
@@ -68,7 +68,7 @@ public static class WindowsApp
         RegisterAll(hotkeys, config.Hotkeys);
         Log.Info(
             "hotkeys registered",
-            new("hint", "press Ctrl+Alt+R to cycle, Ctrl+Alt+Q to quit"));
+            new LogField("hint", "press Ctrl+Alt+R to cycle, Ctrl+Alt+Q to quit"));
 
         using var foregroundHook = new ForegroundHook(overlay.ReassertTopmost);
         using var registration = cancellationToken.Register(queue.EnqueueEventLoopExit);
@@ -76,10 +76,12 @@ public static class WindowsApp
         loop.Start();
 
         // Hand the loop's state to CrashDump so post-mortem includes the
-        // current Mode/Lifecycle/cursor in the dump.
+        // current Mode/Lifecycle/cursor in the dump. Heartbeat reads the
+        // same snapshot — one source of truth for "what is the app doing
+        // right now."
         CrashDump.RegisterStateSnapshot(loop.Snapshot);
 
-        using var heartbeat = new Heartbeat(loop.HeartbeatFields);
+        using var heartbeat = new Heartbeat(loop.Snapshot);
 
         Log.Info("entering run loop");
         queue.RunEventLoop();
@@ -101,16 +103,16 @@ public static class WindowsApp
                 {
                     HotkeyLog.Warn(
                         "register failed",
-                        new("chord", chord),
-                        new("error", err.Error.ToString()));
+                        new LogField("chord", chord),
+                        new LogField("error", err.Error.ToString()));
                 }
             }
             else if (parsed is Result<ChordSpec, ChordError>.Err err)
             {
                 HotkeyLog.Warn(
                     "chord parse failed",
-                    new("chord", chord),
-                    new("error", err.Error.ToHumanString()));
+                    new LogField("chord", chord),
+                    new LogField("error", err.Error.ToHumanString()));
             }
         }
     }
@@ -160,24 +162,19 @@ public static class WindowsApp
 
         public void Stop() => _timer.Stop();
 
-        /// <summary>State snapshot for crash dumps.</summary>
-        public object Snapshot() => new
-        {
-            mode = _state.Mode.ToString(),
-            visible = _state.Visible,
-            cursor_x = _lastCursor?.X,
-            cursor_y = _lastCursor?.Y,
-            frame_seq = Volatile.Read(ref _frameSeq),
-        };
-
-        /// <summary>Fields for the periodic heartbeat.</summary>
-        public LogField[] HeartbeatFields() =>
+        /// <summary>
+        /// Snapshot used both by <see cref="Heartbeat"/> (live observability)
+        /// and by <see cref="CrashDump.RegisterStateSnapshot"/> (post-mortem).
+        /// Returning a single flat field-array keeps the schema identical
+        /// across both sinks so a downstream <c>jq</c> query works on both.
+        /// </summary>
+        public LogField[] Snapshot() =>
         [
-            new("mode", _state.Mode),
-            new("visible", _state.Visible),
-            new("cursor_x", _lastCursor?.X ?? 0),
-            new("cursor_y", _lastCursor?.Y ?? 0),
-            new("frame_seq", Volatile.Read(ref _frameSeq)),
+            new LogField("mode", _state.Mode),
+            new LogField("visible", _state.Visible),
+            new LogField("cursor_x", _lastCursor?.X ?? 0),
+            new LogField("cursor_y", _lastCursor?.Y ?? 0),
+            new LogField("frame_seq", Volatile.Read(ref _frameSeq)),
         ];
 
         private void OnTick(object? sender, object args)
@@ -197,9 +194,9 @@ public static class WindowsApp
                 {
                     TickLog.Debug(
                         "state changed",
-                        new("action", action.GetType().Name),
-                        new("mode", _state.Mode),
-                        new("visible", _state.Visible));
+                        new LogField("action", action.GetType().Name),
+                        new LogField("mode", _state.Mode),
+                        new LogField("visible", _state.Visible));
                     ApplyFrame();
                 }
             }

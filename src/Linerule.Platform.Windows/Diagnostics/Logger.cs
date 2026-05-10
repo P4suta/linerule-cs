@@ -78,10 +78,10 @@ public static class Logger
         var bootstrap = For(Subsystems.Logger);
         bootstrap.Info(
             "initialized",
-            new("run_id", pipeline.RunId.ToString("D")),
-            new("jsonl", path),
-            new("default_level", defaultLevel),
-            new("subsystem_overrides", spec ?? string.Empty));
+            new LogField("run_id", pipeline.RunId.ToString("D")),
+            new LogField("jsonl", path),
+            new LogField("default_level", defaultLevel),
+            new LogField("subsystem_overrides", spec ?? string.Empty));
     }
 
     /// <summary>

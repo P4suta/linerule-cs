@@ -44,6 +44,7 @@ public sealed class LogPipeline
 
     public IDisposable PushContext(Func<LogContext, LogContext> mutator)
     {
+        ArgumentNullException.ThrowIfNull(mutator);
         var prev = _context.Value;
         _context.Value = mutator(CurrentContext);
         return new ContextScope(this, prev);
@@ -124,7 +125,7 @@ public sealed class LogPipeline
             {
                 continue;
             }
-            if (key == "*")
+            if (string.Equals(key, "*", StringComparison.Ordinal))
             {
                 defaultLevel = level;
             }

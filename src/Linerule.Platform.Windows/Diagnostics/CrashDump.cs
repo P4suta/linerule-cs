@@ -1,12 +1,13 @@
 using System;
-using System.Buffers;
+using System.Collections.Generic;
+using System.ComponentModel;
 using System.Globalization;
 using System.IO;
 using System.Runtime.InteropServices;
-using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using Linerule.Platform.Windows.Diagnostics.Internal;
 
 namespace Linerule.Platform.Windows.Diagnostics;
 
@@ -34,9 +35,11 @@ namespace Linerule.Platform.Windows.Diagnostics;
 /// </summary>
 public static class CrashDump
 {
-    private static int _installed;
-    private static Func<object?>? _stateSnapshot;
+    private static readonly TimeProvider Time = TimeProvider.System;
     private static readonly Lock DumpGate = new();
+
+    private static int _installed;
+    private static Func<LogField[]>? _stateSnapshot;
     private static LoggerHandle? _log;
 
     /// <summary>
@@ -57,9 +60,10 @@ public static class CrashDump
         TaskScheduler.UnobservedTaskException += OnUnobserved;
         AppDomain.CurrentDomain.ProcessExit += OnExit;
 
-        _log.Info("installed",
-            new("dump_dir", Path.GetTempPath()),
-            new("ring_capacity", Logger.RecentEntries().Count));
+        _log.Info(
+            "installed",
+            new LogField("dump_dir", Path.GetTempPath()),
+            new LogField("ring_capacity", Logger.RecentEntries().Count));
     }
 
     /// <summary>
@@ -67,8 +71,9 @@ public static class CrashDump
     /// current app state (mode, lifecycle, cursor, etc.). The crash dump
     /// invokes it under the dump gate.
     /// </summary>
-    public static void RegisterStateSnapshot(Func<object?> snapshot)
+    public static void RegisterStateSnapshot(Func<LogField[]> snapshot)
     {
+        ArgumentNullException.ThrowIfNull(snapshot);
         _stateSnapshot = snapshot;
     }
 
@@ -78,15 +83,13 @@ public static class CrashDump
         _log?.Error(
             "AppDomain.UnhandledException",
             ex,
-            new("terminating", e.IsTerminating));
+            new LogField("terminating", e.IsTerminating));
         Dump("AppDomain.UnhandledException", ex, terminating: e.IsTerminating);
     }
 
     private static void OnUnobserved(object? sender, UnobservedTaskExceptionEventArgs e)
     {
-        _log?.Error(
-            "TaskScheduler.UnobservedTaskException",
-            e.Exception);
+        _log?.Error("TaskScheduler.UnobservedTaskException", e.Exception);
         Dump("TaskScheduler.UnobservedTaskException", e.Exception, terminating: false);
         e.SetObserved();
     }
@@ -107,65 +110,7 @@ public static class CrashDump
         {
             try
             {
-                var stamp = DateTimeOffset.UtcNow;
-                var name = $"linerule-crash-{stamp:yyyyMMdd-HHmmss-fff}.json";
-                var path = Path.Combine(Path.GetTempPath(), name);
-
-                var lastWin32 = Marshal.GetLastWin32Error();
-                var entries = Logger.RecentEntries();
-                var stateSnapshot = SafeStateSnapshot();
-
-                using var stream = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.Read);
-                using var w = new Utf8JsonWriter(stream, new JsonWriterOptions { Indented = true });
-
-                w.WriteStartObject();
-                w.WriteString("trigger", trigger);
-                w.WriteString("timestamp", stamp.ToString("O", CultureInfo.InvariantCulture));
-                w.WriteBoolean("terminating", terminating);
-                w.WriteString("run_id", Logger.RunId.ToString("D"));
-
-                w.WritePropertyName("process");
-                w.WriteStartObject();
-                w.WriteString("machine", Environment.MachineName);
-                w.WriteString("os_version", Environment.OSVersion.VersionString);
-                w.WriteString("clr_version", Environment.Version.ToString());
-                w.WriteNumber("processor_count", Environment.ProcessorCount);
-                w.WriteNumber("working_set_bytes", Environment.WorkingSet);
-                w.WriteNumber("tick_count_ms", Environment.TickCount64);
-                w.WriteEndObject();
-
-                w.WriteNumber("last_win32_error", lastWin32);
-                w.WriteString("last_win32_error_name", Win32Guard.DecodeName(lastWin32));
-
-                if (exception is not null)
-                {
-                    w.WritePropertyName("exception");
-                    WriteException(w, exception);
-                }
-
-                if (stateSnapshot is not null)
-                {
-                    w.WritePropertyName("state_snapshot");
-                    JsonSerializer.Serialize(w, stateSnapshot);
-                }
-
-                w.WritePropertyName("recent_log");
-                w.WriteStartArray();
-                foreach (var e in entries)
-                {
-                    WriteLogEntry(w, e);
-                }
-                w.WriteEndArray();
-
-                w.WriteEndObject();
-                w.Flush();
-
-                _log?.Warn("dump written",
-                    new("path", path),
-                    new("entries", entries.Count),
-                    new("trigger", trigger));
-
-                return path;
+                return WriteDumpFile(trigger, exception, terminating);
             }
             catch (IOException ex)
             {
@@ -180,27 +125,78 @@ public static class CrashDump
             catch (Exception ex)
             {
                 // Last-resort: never let a crash-dump failure crash the
-                // crash-dump path.
+                // crash-dump path itself.
                 _log?.Error("dump write unexpected", ex);
                 return null;
             }
         }
     }
 
-    private static object? SafeStateSnapshot()
+    private static string WriteDumpFile(string trigger, Exception? exception, bool terminating)
     {
-        try
-        {
-            return _stateSnapshot?.Invoke();
-        }
-        catch (Exception ex)
-        {
-            _log?.Warn("state snapshot threw", new("type", ex.GetType().FullName ?? "?"), new("msg", ex.Message));
-            return null;
-        }
+        var stamp = Time.GetUtcNow();
+        var name = $"linerule-crash-{stamp:yyyyMMdd-HHmmss-fff}.json";
+        var path = Path.Combine(Path.GetTempPath(), name);
+
+        var lastWin32 = Marshal.GetLastWin32Error();
+        var entries = Logger.RecentEntries();
+        var stateFields = SafeStateSnapshot();
+
+        using var stream = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.Read);
+        using var w = new Utf8JsonWriter(stream, new JsonWriterOptions { Indented = true });
+
+        w.WriteStartObject();
+        WriteHeader(w, trigger, stamp, terminating, lastWin32);
+        WriteProcess(w);
+        WriteExceptionMaybe(w, exception);
+        WriteStateSnapshot(w, stateFields);
+        WriteRecentLog(w, entries);
+        w.WriteEndObject();
+        w.Flush();
+
+        _log?.Warn(
+            "dump written",
+            new LogField("path", path),
+            new LogField("entries", entries.Count),
+            new LogField("trigger", trigger));
+
+        return path;
     }
 
-    private static void WriteException(Utf8JsonWriter w, Exception ex)
+    private static void WriteHeader(Utf8JsonWriter w, string trigger, DateTimeOffset stamp, bool terminating, int lastWin32)
+    {
+        w.WriteString("trigger", trigger);
+        w.WriteString("timestamp", stamp.ToString("O", CultureInfo.InvariantCulture));
+        w.WriteBoolean("terminating", terminating);
+        w.WriteString("run_id", Logger.RunId.ToString("D"));
+        w.WriteNumber("last_win32_error", lastWin32);
+        w.WriteString("last_win32_error_name", Win32Guard.DecodeName(lastWin32));
+    }
+
+    private static void WriteProcess(Utf8JsonWriter w)
+    {
+        w.WritePropertyName("process");
+        w.WriteStartObject();
+        w.WriteString("machine", Environment.MachineName);
+        w.WriteString("os_version", Environment.OSVersion.VersionString);
+        w.WriteString("clr_version", Environment.Version.ToString());
+        w.WriteNumber("processor_count", Environment.ProcessorCount);
+        w.WriteNumber("working_set_bytes", Environment.WorkingSet);
+        w.WriteNumber("tick_count_ms", Environment.TickCount64);
+        w.WriteEndObject();
+    }
+
+    private static void WriteExceptionMaybe(Utf8JsonWriter w, Exception? ex)
+    {
+        if (ex is null)
+        {
+            return;
+        }
+        w.WritePropertyName("exception");
+        WriteExceptionTree(w, ex);
+    }
+
+    private static void WriteExceptionTree(Utf8JsonWriter w, Exception ex)
     {
         w.WriteStartObject();
         w.WriteString("type", ex.GetType().FullName);
@@ -214,9 +210,35 @@ public static class CrashDump
         if (ex.InnerException is { } inner)
         {
             w.WritePropertyName("inner");
-            WriteException(w, inner);
+            WriteExceptionTree(w, inner);
         }
         w.WriteEndObject();
+    }
+
+    private static void WriteStateSnapshot(Utf8JsonWriter w, LogField[]? fields)
+    {
+        if (fields is null || fields.Length == 0)
+        {
+            return;
+        }
+        w.WritePropertyName("state_snapshot");
+        w.WriteStartObject();
+        foreach (var f in fields)
+        {
+            JsonFieldWriter.Write(w, f);
+        }
+        w.WriteEndObject();
+    }
+
+    private static void WriteRecentLog(Utf8JsonWriter w, IReadOnlyList<LogEntry> entries)
+    {
+        w.WritePropertyName("recent_log");
+        w.WriteStartArray();
+        foreach (var e in entries)
+        {
+            WriteLogEntry(w, e);
+        }
+        w.WriteEndArray();
     }
 
     private static void WriteLogEntry(Utf8JsonWriter w, in LogEntry entry)
@@ -232,16 +254,36 @@ public static class CrashDump
             w.WriteStartObject();
             foreach (var f in entry.Fields)
             {
-                w.WritePropertyName(f.Key);
-                JsonSerializer.Serialize(w, f.Value);
+                JsonFieldWriter.Write(w, f);
             }
             w.WriteEndObject();
         }
         if (entry.Exception is { } ex)
         {
             w.WritePropertyName("exception");
-            WriteException(w, ex);
+            WriteExceptionTree(w, ex);
         }
         w.WriteEndObject();
+    }
+
+    private static LogField[]? SafeStateSnapshot()
+    {
+        var snap = _stateSnapshot;
+        if (snap is null)
+        {
+            return null;
+        }
+        try
+        {
+            return snap();
+        }
+        catch (Exception ex)
+        {
+            _log?.Warn(
+                "state snapshot threw",
+                new LogField("type", ex.GetType().FullName ?? "?"),
+                new LogField("msg", ex.Message));
+            return null;
+        }
     }
 }

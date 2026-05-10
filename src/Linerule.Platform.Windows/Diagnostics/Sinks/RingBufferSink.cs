@@ -17,10 +17,7 @@ internal sealed class RingBufferSink : ILogSink
 
     public RingBufferSink(int capacity)
     {
-        if (capacity <= 0)
-        {
-            throw new System.ArgumentOutOfRangeException(nameof(capacity));
-        }
+        System.ArgumentOutOfRangeException.ThrowIfNegativeOrZero(capacity);
         _buffer = new LogEntry[capacity];
     }
 

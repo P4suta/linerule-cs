@@ -45,12 +45,12 @@ public sealed class ForegroundHook : IDisposable
             var (err, name) = Win32Guard.LastError();
             Log.Warn(
                 "SetWinEventHook failed — topmost re-assertion disabled",
-                new("err", err),
-                new("err_name", name));
+                new LogField("err", err),
+                new LogField("err_name", name));
         }
         else
         {
-            Log.Debug("SetWinEventHook ok", new("hook", $"0x{_hookHandle:X}"));
+            Log.Debug("SetWinEventHook ok", new LogField("hook", $"0x{_hookHandle:X}"));
         }
     }
 
@@ -67,13 +67,10 @@ public sealed class ForegroundHook : IDisposable
             return;
         }
 
-        if (_hookHandle != IntPtr.Zero)
+        if (_hookHandle != IntPtr.Zero && !NativeBridge.UnhookWinEvent(_hookHandle))
         {
-            if (!NativeBridge.UnhookWinEvent(_hookHandle))
-            {
-                var (err, name) = Win32Guard.LastError();
-                Log.Warn("UnhookWinEvent failed", new("err", err), new("err_name", name));
-            }
+            var (err, name) = Win32Guard.LastError();
+            Log.Warn("UnhookWinEvent failed", new LogField("err", err), new LogField("err_name", name));
         }
         _disposed = true;
     }

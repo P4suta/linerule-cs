@@ -18,7 +18,7 @@ public static class MonitorInfo
     {
         var w = (uint)PInvoke.GetSystemMetrics(SYSTEM_METRICS_INDEX.SM_CXSCREEN);
         var h = (uint)PInvoke.GetSystemMetrics(SYSTEM_METRICS_INDEX.SM_CYSCREEN);
-        Log.Debug("primary monitor bounds", new("width", w), new("height", h));
+        Log.Debug("primary monitor bounds", new LogField("width", w), new LogField("height", h));
         return new ScreenRect<Logical>(new Point<Logical>(0, 0), w, h);
     }
 }

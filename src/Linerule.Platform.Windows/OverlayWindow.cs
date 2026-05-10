@@ -52,6 +52,9 @@ public sealed class OverlayWindow : IOverlaySurface
 
     public ScreenRect<Logical> MonitorBounds { get; }
 
+    /// <summary>Hex render of an <see cref="HWND"/> for log fields.</summary>
+    private static unsafe string HexHwnd(HWND h) => $"0x{(nint)h.Value:X}";
+
     private OverlayWindow(
         HWND hwnd,
         Compositor compositor,
@@ -72,14 +75,14 @@ public sealed class OverlayWindow : IOverlaySurface
     {
         ArgumentNullException.ThrowIfNull(queue);
         Log.Info("create begin",
-            new("monitor_w", monitor.Width),
-            new("monitor_h", monitor.Height));
+            new LogField("monitor_w", monitor.Width),
+            new LogField("monitor_h", monitor.Height));
 
         EnsureWindowClassRegistered();
-        Log.Debug("window class registered", new("class", ClassName));
+        Log.Debug("window class registered", new LogField("class", ClassName));
 
         var hwnd = CreateHwnd(monitor);
-        Log.Info("CreateWindowExW ok", new("hwnd", $"0x{(nint)hwnd.Value:X}"));
+        Log.Info("CreateWindowExW ok", new LogField("hwnd", HexHwnd(hwnd)));
         ExStyleSnapshot.Capture(hwnd, "after CreateWindowExW", Log);
 
         ApplyTempLayeredAlpha(hwnd);
@@ -103,7 +106,7 @@ public sealed class OverlayWindow : IOverlaySurface
     /// real <c>WS_EX_NOREDIRECTIONBITMAP</c> path is in use (which doesn't
     /// take SetLayeredWindowAttributes at all).
     /// </summary>
-    private static unsafe void ApplyTempLayeredAlpha(HWND hwnd)
+    private static void ApplyTempLayeredAlpha(HWND hwnd)
     {
         // 0xCC ≈ 80% opacity — uniform translucent grey across the monitor.
         Win32Guard.Check(
@@ -160,7 +163,7 @@ public sealed class OverlayWindow : IOverlaySurface
         var compLog = Logger.For(Subsystems.Composition);
 
         var windowId = Win32Interop.GetWindowIdFromWindow((nint)hwnd.Value);
-        bridgeLog.Debug("GetWindowIdFromWindow ok", new("id", $"0x{windowId.Value:X}"));
+        bridgeLog.Debug("GetWindowIdFromWindow ok", new LogField("id", $"0x{windowId.Value:X}"));
 
         SystemDispatcherQueue.EnsureForCurrentThread();
         compLog.Debug("Windows.System.DispatcherQueue established for thread");
@@ -179,8 +182,8 @@ public sealed class OverlayWindow : IOverlaySurface
         bridge.ProcessesKeyboardInput = false;
         bridgeLog.Info(
             "click-through knob set",
-            new("processes_pointer_input", false),
-            new("processes_keyboard_input", false));
+            new LogField("processes_pointer_input", false),
+            new LogField("processes_keyboard_input", false));
 
         bridge.Connect(island);
         bridgeLog.Info("bridge.Connect(island) ok");
@@ -289,7 +292,7 @@ public sealed class OverlayWindow : IOverlaySurface
             var n = Interlocked.Increment(ref _nchitCount);
             if (WndProcLog.IsEnabled(LogLevel.Trace) && (n <= 3 || n % 200 == 0))
             {
-                WndProcLog.Trace("WM_NCHITTEST → HTTRANSPARENT", new("count", n));
+                WndProcLog.Trace("WM_NCHITTEST → HTTRANSPARENT", new LogField("count", n));
             }
             return new LRESULT(HTTRANSPARENT);
         }
@@ -298,64 +301,10 @@ public sealed class OverlayWindow : IOverlaySurface
             var n = Interlocked.Increment(ref _clickCount);
             WndProcLog.Warn(
                 "click reached overlay (click-through failed)",
-                new("msg", $"0x{msg:X4}"),
-                new("count", n));
+                new LogField("msg", $"0x{msg:X4}"),
+                new LogField("count", n));
         }
         return PInvoke.DefWindowProc(hwnd, msg, wParam, lParam);
     }
 }
 
-/// <summary>
-/// Diagnostic snapshot of an HWND's extended style + child window list.
-/// Pure helper — no mutable state, no PInvoke side-effects beyond reads.
-/// </summary>
-internal static class ExStyleSnapshot
-{
-    [ThreadStatic]
-    private static int _enumChildCount;
-
-    [ThreadStatic]
-    private static string? _enumLabel;
-
-    [ThreadStatic]
-    private static LoggerHandle? _enumLog;
-
-    public static unsafe void Capture(HWND hwnd, string label, LoggerHandle log)
-    {
-        var ex = PInvoke.GetWindowLongPtr(hwnd, WINDOW_LONG_PTR_INDEX.GWL_EXSTYLE);
-        log.Debug(
-            $"ex-style snapshot ({label})",
-            new("ex_style", $"0x{ex:X8}"),
-            new("transparent", (ex & (long)WINDOW_EX_STYLE.WS_EX_TRANSPARENT) != 0),
-            new("noredir", (ex & (long)WINDOW_EX_STYLE.WS_EX_NOREDIRECTIONBITMAP) != 0),
-            new("layered", (ex & (long)WINDOW_EX_STYLE.WS_EX_LAYERED) != 0));
-
-        _enumChildCount = 0;
-        _enumLabel = label;
-        _enumLog = log;
-        Win32Guard.Check(
-            PInvoke.EnumChildWindows(hwnd, EnumChildCallback, default),
-            $"EnumChildWindows ({label})",
-            log);
-        if (_enumChildCount == 0)
-        {
-            log.Debug($"child HWNDs ({label})", new("count", 0));
-        }
-    }
-
-    private static unsafe BOOL EnumChildCallback(HWND child, LPARAM _)
-    {
-        _enumChildCount++;
-        Span<char> buf = stackalloc char[128];
-        fixed (char* p = buf)
-        {
-            var n = PInvoke.GetClassName(child, p, buf.Length);
-            var name = n > 0 ? new string(p, 0, n) : "<unknown>";
-            _enumLog?.Debug(
-                $"child HWND ({_enumLabel})",
-                new("hwnd", $"0x{(nint)child.Value:X}"),
-                new("class", name));
-        }
-        return true;
-    }
-}
