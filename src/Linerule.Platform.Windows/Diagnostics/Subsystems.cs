@@ -24,4 +24,5 @@ public static class Subsystems
     public const string ForegroundHook = "ForegroundHook";
     public const string CursorTracker = "CursorTracker";
     public const string Logger = "Logger";
+    public const string Hud = "Hud";
 }

@@ -6,6 +6,7 @@ using Linerule.Config;
 using Linerule.Core;
 using Linerule.Platform;
 using Linerule.Platform.Windows.Diagnostics;
+using Linerule.Platform.Windows.Hud;
 using Linerule.Platform.Windows.Rendering;
 using Microsoft.UI.Dispatching;
 
@@ -18,7 +19,7 @@ namespace Linerule.Platform.Windows;
 /// follow + hotkey drain via <see cref="DispatcherQueueTimer"/>, then runs the
 /// dispatcher's event loop until <see cref="OverlayAction.Quit"/> is observed.
 /// </summary>
-public static class WindowsApp
+public static partial class WindowsApp
 {
     private static readonly LoggerHandle Log = Logger.For(Subsystems.WindowsApp);
     private static readonly LoggerHandle TickLog = Logger.For(Subsystems.TickLoop);
@@ -80,7 +81,8 @@ public static class WindowsApp
         using var foregroundHook = new ForegroundHook(overlay.ReassertTopmost);
         await using var registration = cancellationToken.Register(queue.EnqueueEventLoopExit);
         var timing = RenderTiming.Probe(Log);
-        using var loop = new TickLoop(overlay, hotkeys, cursor, queue, timing);
+        using var hud = CreateHud(overlay);
+        using var loop = new TickLoop(overlay, hotkeys, cursor, queue, timing, hud, config.Hotkeys);
         loop.Start();
 
         // Hand the loop's state to CrashDump so post-mortem includes the
@@ -205,6 +207,20 @@ public static class WindowsApp
         }
     }
 
+    /// <summary>
+    /// Construct the HUD bound to the overlay's compositor + a fresh layer
+    /// at the top of its visual tree. Returns a disposable that owns the
+    /// HUD's surface / brush / visual / Win2D resources.
+    /// </summary>
+    private static HudVisual CreateHud(OverlayWindow overlay)
+    {
+        var dpiScale = overlay.Dpi / 96f;
+        var monitorWidthPx = (int)(overlay.MonitorBounds.Width * dpiScale);
+        var layout = HudLayout.ForMonitor(monitorWidthPx, monitorMarginRightPx: 0, dpiScale: dpiScale);
+        var layer = overlay.CreateLayer();
+        return new HudVisual(overlay.Compositor, layer, layout);
+    }
+
     private static IEnumerable<(string Chord, OverlayAction Action)> BuildBindings(HotkeyMap map)
     {
         // Step sizes: were +4 each. User feedback 2026-05-11 — "spamming the
@@ -236,16 +252,25 @@ public static class WindowsApp
     /// poll — this is the right place for it because the hotkey host already
     /// queues asynchronously, so latency is "next tick" worst case.
     /// </summary>
-    private sealed class TickLoop : IDisposable
+    private sealed partial class TickLoop : IDisposable
     {
+        // Refresh the HUD's telemetry section every Nth tick — once per
+        // ~200 ms at 125 Hz tick rate. The status section is event-driven
+        // (refreshed on state change) so this counter only paces the
+        // "FPS / dropped frames" line.
+        private const int HudTelemetryRefreshEvery = 25;
+
         private readonly OverlayWindow _overlay;
         private readonly HotkeyHost _hotkeys;
         private readonly CursorTracker _cursor;
         private readonly DispatcherQueue _queue;
         private readonly RenderClock _clock;
+        private readonly HudVisual _hud;
+        private readonly HotkeyMap _hotkeyMap;
         private State _state = State.Default;
         private Point<Logical>? _lastCursor;
         private long _frameSeq;
+        private long _hudTelemetryTick;
         private bool _disposed;
 
         public TickLoop(
@@ -253,7 +278,9 @@ public static class WindowsApp
             HotkeyHost hotkeys,
             CursorTracker cursor,
             DispatcherQueue queue,
-            RenderTiming timing
+            RenderTiming timing,
+            HudVisual hud,
+            HotkeyMap hotkeyMap
         )
         {
             _overlay = overlay;
@@ -261,11 +288,14 @@ public static class WindowsApp
             _cursor = cursor;
             _queue = queue;
             _clock = new RenderClock(queue, timing, OnTick);
+            _hud = hud;
+            _hotkeyMap = hotkeyMap;
         }
 
         public void Start()
         {
             ApplyFrame();
+            RefreshHud();
             _clock.Start();
         }
 
@@ -329,6 +359,7 @@ public static class WindowsApp
                         new LogField("visible", _state.Visible)
                     );
                     ApplyFrame();
+                    RefreshHud();
                 }
             }
 
@@ -342,6 +373,20 @@ public static class WindowsApp
                     _overlay.Apply(Render.Frame(_state.Mode, now, _overlay.MonitorBounds, _state.Config));
                 }
             }
+
+            // Periodic telemetry refresh — no state change, but the FPS /
+            // p99 / dropped-frames numbers in the HUD slowly drift. HUD's
+            // own equality gate ensures we don't redraw if nothing moved.
+            if (++_hudTelemetryTick % HudTelemetryRefreshEvery == 0)
+            {
+                RefreshHud();
+            }
+        }
+
+        private void RefreshHud()
+        {
+            var content = HudComposer.Compose(_state, _hotkeyMap, _clock.Stats.Snapshot(), _clock.Timing);
+            _hud.Update(content);
         }
 
         private void ApplyFrame()
