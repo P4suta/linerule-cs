@@ -53,6 +53,18 @@ commit-msg:
       run: npx --no -- commitlint --edit {1}
 
 pre-push:
+  # piped = run in declaration order, stop on first failure. Publish is
+  # gated behind a green test run so `artifacts/publish/linerule.exe` is
+  # never refreshed from a broken tree.
+  piped: true
   commands:
     test:
       run: dotnet test --nologo --no-restore
+
+    publish:
+      # Mirrors `just publish` (Justfile) — self-contained Release build
+      # for win-x64 dropped at `artifacts/publish/`. Runs only after tests
+      # pass, so a clean `git push` always leaves the publish artifact in
+      # sync with HEAD (avoids the "ran stale exe and chased a phantom
+      # bug" failure mode).
+      run: dotnet publish src/Linerule.Cli -c Release -r win-x64 /p:SelfContained=true -o artifacts/publish --nologo -v minimal
