@@ -43,6 +43,14 @@
     <UseSharedCompilation>true</UseSharedCompilation>
     <BuildInParallel>true</BuildInParallel>
 
+    <!--
+      Win2D 1.4 emits WIN2D0001 when it doesn't see an explicit Platform set.
+      Linerule.Platform.Windows pins x64 via PlatformTarget; consuming projects
+      inherit the runtime via the win-x64 RID at publish time. The warn doesn't
+      reflect a real misconfiguration, so silence it solution-wide.
+    -->
+    <Win2DWarnNoPlatform>false</Win2DWarnNoPlatform>
+
     <IsAotCompatible>true</IsAotCompatible>
     <InvariantGlobalization>true</InvariantGlobalization>
 

@@ -5,7 +5,14 @@
     <RootNamespace>Linerule.Platform.Windows</RootNamespace>
     <AssemblyName>Linerule.Platform.Windows</AssemblyName>
     <Description>Windows-specific platform impl: Win32 click-through overlay + Microsoft.UI.Composition + RegisterHotKey.</Description>
-    <UseWinUI>false</UseWinUI>
+    <!--
+      UseWinUI=true is required to project Microsoft.Graphics.Win2D's WinRT
+      types (CanvasDevice / CompositionGraphicsDevice / CanvasTextFormat / …)
+      under Microsoft.UI.Composition. The entry point is still our pure Win32
+      + Composition path; UseWinUI here only flips on the cswinrt projection
+      generation for the WinUI flavor of WindowsAppSDK.
+    -->
+    <UseWinUI>true</UseWinUI>
     <UseWPF>false</UseWPF>
     <UseWindowsForms>false</UseWindowsForms>
     <EnableMsixTooling>false</EnableMsixTooling>
@@ -26,6 +33,13 @@
       arm64 is added once we're ready to build a multi-RID artifact.
     -->
     <PlatformTarget>x64</PlatformTarget>
+    <!--
+      Win2D's targets emit WIN2D0001 when AnyCPU is detected; PlatformTarget
+      above sets x64 explicitly. The warning checks `$(Platform)` (different
+      property, not always set in modern SDK-style projects) so we suppress
+      the redundant warn — actual binary IS x64 per RID + PlatformTarget.
+    -->
+    <Win2DWarnNoPlatform>false</Win2DWarnNoPlatform>
   </PropertyGroup>
 
   <ItemGroup>
@@ -40,6 +54,7 @@
     <PackageReference Include="Microsoft.Windows.CsWin32">
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
+    <PackageReference Include="Microsoft.Graphics.Win2D" />
   </ItemGroup>
 
   <ItemGroup>

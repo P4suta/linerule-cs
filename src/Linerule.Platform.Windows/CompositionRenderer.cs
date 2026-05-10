@@ -1,7 +1,7 @@
 using System.Numerics;
 using Linerule.Core;
+using Microsoft.UI.Composition;
 using Windows.UI;
-using Windows.UI.Composition;
 
 namespace Linerule.Platform.Windows;
 
@@ -12,12 +12,11 @@ namespace Linerule.Platform.Windows;
 /// re-colored in place rather than re-allocated.
 ///
 /// <para>
-/// Uses <see cref="Windows.UI.Composition"/> (the OS-level WinRT Composition,
-/// stable since Windows 10 1709), <em>not</em> <see cref="Microsoft.UI.Composition"/>:
-/// <see cref="Microsoft.UI.Content.ContentIsland.CreateForSystemVisual"/> requires
-/// <see cref="Windows.UI.Composition.Visual"/> at the root, per the WinAppSDK 1.7
-/// release notes. Choosing the system compositor unlocks the
-/// <c>ProcessesPointerInput = false</c> click-through knob on the attached bridge.
+/// Uses <see cref="Microsoft.UI.Composition"/> (the WinAppSDK Composition
+/// stack — Microsoft's recommended path for new desktop apps in 2026).
+/// The overlay's <see cref="Microsoft.UI.Content.ContentIsland.Create(Microsoft.UI.Composition.Visual)"/>
+/// hosts the visual tree; the same compositor is shared with the Win2D-painted
+/// HUD so both render through one device.
 /// </para>
 ///
 /// <para>
