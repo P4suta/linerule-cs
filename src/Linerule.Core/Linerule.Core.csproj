@@ -1,5 +1,4 @@
 <Project Sdk="Microsoft.NET.Sdk">
-
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <RootNamespace>Linerule.Core</RootNamespace>
@@ -10,5 +9,4 @@
   <ItemGroup>
     <InternalsVisibleTo Include="Linerule.Core.Tests" />
   </ItemGroup>
-
 </Project>

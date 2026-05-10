@@ -1,3 +1,4 @@
+using System.Globalization;
 using Linerule.Config;
 using Spectre.Console;
 
@@ -16,7 +17,12 @@ internal static class DiagnosticPrinter
             case ConfigError.SchemaDiagnostics d:
                 foreach (var diag in d.Items)
                 {
-                    var loc = diag.Span is { } s ? $"{diag.Source ?? "<config>"}:{s.Line}:{s.Column}" : diag.Source ?? "<config>";
+                    var loc = diag.Span is { } s
+                        ? string.Create(
+                            CultureInfo.InvariantCulture,
+                            $"{diag.Source ?? "<config>"}:{s.Line}:{s.Column}"
+                        )
+                        : diag.Source ?? "<config>";
                     AnsiConsole.MarkupLineInterpolated($"[red]error[/] [grey]{loc}[/]: {diag.Message}");
                 }
 

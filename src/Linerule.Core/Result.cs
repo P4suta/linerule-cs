@@ -15,6 +15,7 @@ public abstract record Result<T, TError>
     private protected Result() { }
 
     public sealed record Ok(T Value) : Result<T, TError>;
+
     public sealed record Err(TError Error) : Result<T, TError>;
 
     public bool IsOk => this is Ok;

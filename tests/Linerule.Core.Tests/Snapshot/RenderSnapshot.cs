@@ -4,14 +4,12 @@ namespace Linerule.Core.Tests.Snapshot;
 
 public sealed class RenderSnapshot
 {
-    private static readonly ScreenRect<Logical> Monitor =
-        new(new Point<Logical>(0, 0), 1920, 1080);
+    private static readonly ScreenRect<Logical> Monitor = new(new Point<Logical>(0, 0), 1920, 1080);
 
     private static readonly Point<Logical> Cursor = new(960, 540);
 
     [Fact]
-    public Task Off_is_empty() =>
-        Verifier.Verify(Render.Frame(Mode.Off, Cursor, Monitor, OverlayConfig.Default));
+    public Task Off_is_empty() => Verifier.Verify(Render.Frame(Mode.Off, Cursor, Monitor, OverlayConfig.Default));
 
     [Fact]
     public Task Horizontal_at_center() =>

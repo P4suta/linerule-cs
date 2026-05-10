@@ -1,3 +1,5 @@
+using System.Globalization;
+
 namespace Linerule.Core;
 
 /// <summary>
@@ -14,10 +16,11 @@ public abstract record CoreError
     /// <summary>Thickness outside the valid <c>1..=512</c> range.</summary>
     public sealed record Thickness(int Given) : CoreError;
 
-    public string ToHumanString() => this switch
-    {
-        Opacity o => $"opacity must be in 1..=255 (got {o.Given})",
-        Thickness t => $"thickness must be in 1..=512 (got {t.Given})",
-        _ => throw new System.Diagnostics.UnreachableException(),
-    };
+    public string ToHumanString() =>
+        this switch
+        {
+            Opacity o => string.Create(CultureInfo.InvariantCulture, $"opacity must be in 1..=255 (got {o.Given})"),
+            Thickness t => string.Create(CultureInfo.InvariantCulture, $"thickness must be in 1..=512 (got {t.Given})"),
+            _ => throw new System.Diagnostics.UnreachableException(),
+        };
 }

@@ -13,19 +13,43 @@ public abstract record KeyCode
     /// <summary>Letter key, ASCII <c>'A'..='Z'</c> only.</summary>
     public sealed record Letter(byte Code) : KeyCode;
 
-    public sealed record BracketLeft : KeyCode { public static BracketLeft Instance { get; } = new(); }
+    public sealed record BracketLeft : KeyCode
+    {
+        public static BracketLeft Instance { get; } = new();
+    }
 
-    public sealed record BracketRight : KeyCode { public static BracketRight Instance { get; } = new(); }
+    public sealed record BracketRight : KeyCode
+    {
+        public static BracketRight Instance { get; } = new();
+    }
 
-    public sealed record Minus : KeyCode { public static Minus Instance { get; } = new(); }
+    public sealed record Minus : KeyCode
+    {
+        public static Minus Instance { get; } = new();
+    }
 
-    public sealed record Equal : KeyCode { public static Equal Instance { get; } = new(); }
+    public sealed record Equal : KeyCode
+    {
+        public static Equal Instance { get; } = new();
+    }
 
-    public sealed record ArrowUp : KeyCode { public static ArrowUp Instance { get; } = new(); }
+    public sealed record ArrowUp : KeyCode
+    {
+        public static ArrowUp Instance { get; } = new();
+    }
 
-    public sealed record ArrowDown : KeyCode { public static ArrowDown Instance { get; } = new(); }
+    public sealed record ArrowDown : KeyCode
+    {
+        public static ArrowDown Instance { get; } = new();
+    }
 
-    public sealed record ArrowLeft : KeyCode { public static ArrowLeft Instance { get; } = new(); }
+    public sealed record ArrowLeft : KeyCode
+    {
+        public static ArrowLeft Instance { get; } = new();
+    }
 
-    public sealed record ArrowRight : KeyCode { public static ArrowRight Instance { get; } = new(); }
+    public sealed record ArrowRight : KeyCode
+    {
+        public static ArrowRight Instance { get; } = new();
+    }
 }

@@ -65,16 +65,19 @@ internal static class ConfigCommand
                 File.WriteAllText(path, TomlPrinter.Render(UserConfig.Default));
             }
 
-            var editor = Environment.GetEnvironmentVariable("EDITOR")
+            var editor =
+                Environment.GetEnvironmentVariable("EDITOR")
                 ?? Environment.GetEnvironmentVariable("VISUAL")
                 ?? "notepad.exe";
 
-            using var proc = Process.Start(new ProcessStartInfo
-            {
-                FileName = editor,
-                Arguments = $"\"{path}\"",
-                UseShellExecute = true,
-            });
+            using var proc = Process.Start(
+                new ProcessStartInfo
+                {
+                    FileName = editor,
+                    Arguments = $"\"{path}\"",
+                    UseShellExecute = true,
+                }
+            );
             proc?.WaitForExit();
             return 0;
         });

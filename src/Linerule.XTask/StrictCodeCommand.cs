@@ -12,8 +12,10 @@ namespace Linerule.XTask;
 /// </summary>
 internal static class StrictCodeCommand
 {
-    private const RegexOptions BaseOptions =
-        RegexOptions.Compiled | RegexOptions.NonBacktracking | RegexOptions.ExplicitCapture;
+    // NonBacktracking is intentionally NOT included — the bare-tracking-comment
+    // rule uses a negative lookahead which the NonBacktracking engine refuses.
+    // PatternTimeout (2 s) bounds the runaway risk on traditional backtracking.
+    private const RegexOptions BaseOptions = RegexOptions.Compiled | RegexOptions.ExplicitCapture;
     private static readonly TimeSpan PatternTimeout = TimeSpan.FromSeconds(2);
 
     public static Command Build()
@@ -28,8 +30,7 @@ internal static class StrictCodeCommand
         var rules = BuildRules();
         var violations = new List<Violation>();
 
-        var sources = EnumerateSources(repoRoot)
-            .Where(file => !IsExcluded(Path.GetRelativePath(repoRoot, file)));
+        var sources = EnumerateSources(repoRoot).Where(file => !IsExcluded(Path.GetRelativePath(repoRoot, file)));
 
         foreach (var file in sources)
         {
@@ -38,9 +39,11 @@ internal static class StrictCodeCommand
             for (var i = 0; i < lines.Length; i++)
             {
                 var line = lines[i];
-                violations.AddRange(rules
-                    .Where(rule => rule.Pattern.IsMatch(line))
-                    .Select(rule => new Violation(rel, i + 1, line.TrimStart(), rule.Name, rule.Reason)));
+                violations.AddRange(
+                    rules
+                        .Where(rule => rule.Pattern.IsMatch(line))
+                        .Select(rule => new Violation(rel, i + 1, line.TrimStart(), rule.Name, rule.Reason))
+                );
             }
         }
 
@@ -57,7 +60,8 @@ internal static class StrictCodeCommand
                 $"[yellow]{v.Path}[/]",
                 v.Line.ToString(CultureInfo.InvariantCulture),
                 $"[red]{v.Rule}[/]",
-                Markup.Escape(Truncate(v.Snippet, 80)));
+                Markup.Escape(Truncate(v.Snippet, 80))
+            );
         }
 
         AnsiConsole.Write(table);
@@ -71,32 +75,48 @@ internal static class StrictCodeCommand
     }
 
     private static IReadOnlyList<Rule> BuildRules() =>
-    [
-        new("ban-dynamic",
-            new Regex(@"\bdynamic\s+\w", BaseOptions, PatternTimeout),
-            "`dynamic` is AOT/trim-incompatible. Use generics or interfaces."),
-        new("ban-goto",
-            new Regex(@"^\s*goto\s+\w", BaseOptions, PatternTimeout),
-            "`goto` is forbidden — restructure with helpers or break/continue."),
-        new("ban-pragma-disable",
-            new Regex(@"#pragma\s+warning\s+disable", BaseOptions, PatternTimeout),
-            "Fix the warning at its root, do not silence it."),
-        new("ban-suppress-message",
-            new Regex(@"\[SuppressMessage\b", BaseOptions, PatternTimeout),
-            "Replace with a code fix, or use the fixed Justification escape hatch documented in ADR-0006."),
-        new("ban-bare-todo",
-            new Regex(@"//\s*(?:TODO|FIXME|XXX)(?!.*[#A-Z]+-?\d)", BaseOptions, PatternTimeout),
-            "Reference an issue (e.g. `// TODO #42 …`)."),
-        new("ban-newtonsoft",
-            new Regex(@"\bNewtonsoft\.Json\b", BaseOptions, PatternTimeout),
-            "Use System.Text.Json source generators."),
-        new("ban-reflection-emit",
-            new Regex(@"\bSystem\.Reflection\.Emit\b", BaseOptions, PatternTimeout),
-            "Reflection.Emit is AOT-incompatible — use source generators."),
-        new("ban-activator-type",
-            new Regex(@"\bActivator\.CreateInstance\s*\(\s*typeof", BaseOptions, PatternTimeout),
-            "Trim/AOT unsafe; use a typed factory."),
-    ];
+        [
+            new(
+                "ban-dynamic",
+                new Regex(@"\bdynamic\s+\w", BaseOptions, PatternTimeout),
+                "`dynamic` is AOT/trim-incompatible. Use generics or interfaces."
+            ),
+            new(
+                "ban-goto",
+                new Regex(@"^\s*goto\s+\w", BaseOptions, PatternTimeout),
+                "`goto` is forbidden — restructure with helpers or break/continue."
+            ),
+            new(
+                "ban-pragma-disable",
+                new Regex(@"#pragma\s+warning\s+disable", BaseOptions, PatternTimeout),
+                "Fix the warning at its root, do not silence it."
+            ),
+            new(
+                "ban-suppress-message",
+                new Regex(@"\[SuppressMessage\b", BaseOptions, PatternTimeout),
+                "Replace with a code fix, or use the fixed Justification escape hatch documented in ADR-0006."
+            ),
+            new(
+                "ban-bare-todo",
+                new Regex(@"//\s*(?:TODO|FIXME|XXX)(?!.*[#A-Z]+-?\d)", BaseOptions, PatternTimeout),
+                "Reference an issue (e.g. `// TODO #42 …`)."
+            ),
+            new(
+                "ban-newtonsoft",
+                new Regex(@"\bNewtonsoft\.Json\b", BaseOptions, PatternTimeout),
+                "Use System.Text.Json source generators."
+            ),
+            new(
+                "ban-reflection-emit",
+                new Regex(@"\bSystem\.Reflection\.Emit\b", BaseOptions, PatternTimeout),
+                "Reflection.Emit is AOT-incompatible — use source generators."
+            ),
+            new(
+                "ban-activator-type",
+                new Regex(@"\bActivator\.CreateInstance\s*\(\s*typeof", BaseOptions, PatternTimeout),
+                "Trim/AOT unsafe; use a typed factory."
+            ),
+        ];
 
     private static IEnumerable<string> EnumerateSources(string root)
     {
@@ -118,11 +138,11 @@ internal static class StrictCodeCommand
         // Generated artifacts and the xtask itself (the rules quote the patterns
         // they ban, which would otherwise self-trigger).
         var normalized = relativePath.Replace('\\', '/');
-        return normalized.Contains("/obj/", StringComparison.Ordinal) ||
-               normalized.Contains("/bin/", StringComparison.Ordinal) ||
-               normalized.Contains("/Generated/", StringComparison.Ordinal) ||
-               normalized.EndsWith(".g.cs", StringComparison.Ordinal) ||
-               normalized.Contains("Linerule.XTask/StrictCodeCommand.cs", StringComparison.Ordinal);
+        return normalized.Contains("/obj/", StringComparison.Ordinal)
+            || normalized.Contains("/bin/", StringComparison.Ordinal)
+            || normalized.Contains("/Generated/", StringComparison.Ordinal)
+            || normalized.EndsWith(".g.cs", StringComparison.Ordinal)
+            || normalized.Contains("Linerule.XTask/StrictCodeCommand.cs", StringComparison.Ordinal);
     }
 
     private static string Truncate(string s, int max) => s.Length <= max ? s : s[..max] + "…";

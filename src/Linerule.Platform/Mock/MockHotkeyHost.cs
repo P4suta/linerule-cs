@@ -7,7 +7,7 @@ namespace Linerule.Platform.Mock;
 public sealed class MockHotkeyHost : IHotkeyHost
 {
     private readonly Channel<OverlayAction> _channel = Channel.CreateUnbounded<OverlayAction>();
-    private readonly Dictionary<ChordSpec, OverlayAction> _bindings = new();
+    private readonly Dictionary<ChordSpec, OverlayAction> _bindings = [];
 
     public Result<Unit, HotkeyError> Register(ChordSpec chord, OverlayAction action)
     {
@@ -19,12 +19,9 @@ public sealed class MockHotkeyHost : IHotkeyHost
     /// test drives input rather than reacting to it.</summary>
     public ValueTask SendAsync(ChordSpec chord, CancellationToken cancellationToken = default)
     {
-        if (!_bindings.TryGetValue(chord, out var action))
-        {
-            return ValueTask.CompletedTask;
-        }
-
-        return _channel.Writer.WriteAsync(action, cancellationToken);
+        return !_bindings.TryGetValue(chord, out var action)
+            ? ValueTask.CompletedTask
+            : _channel.Writer.WriteAsync(action, cancellationToken);
     }
 
     public IAsyncEnumerable<OverlayAction> Subscribe(CancellationToken cancellationToken) =>

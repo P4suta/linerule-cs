@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using System.Runtime.InteropServices;
 using Linerule.Platform.Windows.Diagnostics;
 
@@ -10,7 +11,7 @@ namespace Linerule.Platform.Windows;
 /// idle-time CPU is zero. Used by the overlay to re-assert TOPMOST z-order
 /// after Alt+Tab / focus changes without a heartbeat timer.
 /// </summary>
-public sealed class ForegroundHook : IDisposable
+public sealed partial class ForegroundHook : IDisposable
 {
     private static readonly LoggerHandle Log = Logger.For(Subsystems.ForegroundHook);
 
@@ -38,7 +39,8 @@ public sealed class ForegroundHook : IDisposable
             _callback,
             idProcess: 0,
             idThread: 0,
-            dwFlags: WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS);
+            dwFlags: WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS
+        );
 
         if (_hookHandle == IntPtr.Zero)
         {
@@ -46,11 +48,15 @@ public sealed class ForegroundHook : IDisposable
             Log.Warn(
                 "SetWinEventHook failed — topmost re-assertion disabled",
                 new LogField("err", err),
-                new LogField("err_name", name));
+                new LogField("err_name", name)
+            );
         }
         else
         {
-            Log.Debug("SetWinEventHook ok", new LogField("hook", $"0x{_hookHandle:X}"));
+            Log.Debug(
+                "SetWinEventHook ok",
+                new LogField("hook", string.Create(CultureInfo.InvariantCulture, $"0x{_hookHandle:X}"))
+            );
         }
     }
 
@@ -75,7 +81,15 @@ public sealed class ForegroundHook : IDisposable
         _disposed = true;
     }
 
-    private void OnEvent(IntPtr hook, uint eventType, IntPtr hwnd, int idObject, int idChild, uint dwEventThread, uint dwmsEventTime)
+    private void OnEvent(
+        IntPtr hook,
+        uint eventType,
+        IntPtr hwnd,
+        int idObject,
+        int idChild,
+        uint dwEventThread,
+        uint dwmsEventTime
+    )
     {
         try
         {
@@ -97,24 +111,26 @@ public sealed class ForegroundHook : IDisposable
         int idObject,
         int idChild,
         uint dwEventThread,
-        uint dwmsEventTime);
+        uint dwmsEventTime
+    );
 
-    private static class NativeBridge
+    private static partial class NativeBridge
     {
-        [DllImport("user32.dll", SetLastError = true)]
+        [LibraryImport("user32.dll", SetLastError = true)]
         [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
-        public static extern IntPtr SetWinEventHook(
+        public static partial IntPtr SetWinEventHook(
             uint eventMin,
             uint eventMax,
             IntPtr hmodWinEventProc,
             WinEventProc lpfnWinEventProc,
             uint idProcess,
             uint idThread,
-            uint dwFlags);
+            uint dwFlags
+        );
 
-        [DllImport("user32.dll", SetLastError = true)]
+        [LibraryImport("user32.dll", SetLastError = true)]
         [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
         [return: MarshalAs(UnmanagedType.Bool)]
-        public static extern bool UnhookWinEvent(IntPtr hWinEventHook);
+        public static partial bool UnhookWinEvent(IntPtr hWinEventHook);
     }
 }

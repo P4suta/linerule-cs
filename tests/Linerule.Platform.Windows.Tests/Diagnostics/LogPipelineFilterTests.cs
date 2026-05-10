@@ -8,7 +8,7 @@ public sealed class LogPipelineFilterTests
     [Fact]
     public void NullSpec_uses_fallback_default_and_empty_per_subsystem()
     {
-        var (perSubsystem, def) = LogPipeline.ParseFilterSpec(null, fallbackDefault: LogLevel.Info);
+        var (perSubsystem, def) = LogPipeline.ParseFilterSpec(spec: null, fallbackDefault: LogLevel.Info);
         Assert.Empty(perSubsystem);
         Assert.Equal(LogLevel.Info, def);
     }
@@ -32,7 +32,10 @@ public sealed class LogPipelineFilterTests
     [Fact]
     public void PerSubsystemOverridesAreParsed()
     {
-        var (perSubsystem, def) = LogPipeline.ParseFilterSpec("OverlayWindow=Trace,WndProc=Debug,*=Warn", LogLevel.Info);
+        var (perSubsystem, def) = LogPipeline.ParseFilterSpec(
+            "OverlayWindow=Trace,WndProc=Debug,*=Warn",
+            LogLevel.Info
+        );
         Assert.Equal(LogLevel.Warn, def);
         Assert.Equal(LogLevel.Trace, perSubsystem["OverlayWindow"]);
         Assert.Equal(LogLevel.Debug, perSubsystem["WndProc"]);
@@ -51,15 +54,17 @@ public sealed class LogPipelineFilterTests
     }
 
     [Fact]
-    public void TypoesAreSilentlyDroppedNotThrown()
+    public void TyposAreSilentlyDroppedNotThrown()
     {
         // Resilience to typos: a malformed token doesn't poison the
         // whole spec. The valid tokens still apply.
-        var (perSubsystem, def) = LogPipeline.ParseFilterSpec("OverlayWindow=Bogus,WndProc=Debug,=Trace,UnknownButValidLevel=Info,*=Warn");
+        var (perSubsystem, def) = LogPipeline.ParseFilterSpec(
+            "OverlayWindow=Bogus,WndProc=Debug,=Trace,UnknownButValidLevel=Info,*=Warn"
+        );
         Assert.Equal(LogLevel.Warn, def);
         Assert.Equal(LogLevel.Debug, perSubsystem["WndProc"]);
         Assert.Equal(LogLevel.Info, perSubsystem["UnknownButValidLevel"]);
-        Assert.False(perSubsystem.ContainsKey("OverlayWindow"));  // bad level → dropped
+        Assert.False(perSubsystem.ContainsKey("OverlayWindow")); // bad level → dropped
     }
 
     [Fact]
@@ -72,9 +77,9 @@ public sealed class LogPipelineFilterTests
     }
 
     [Theory]
-    [InlineData("=Trace")]    // empty key
-    [InlineData("Foo=")]      // empty value
-    [InlineData("NoEquals")]  // no '=' at all
+    [InlineData("=Trace")] // empty key
+    [InlineData("Foo=")] // empty value
+    [InlineData("NoEquals")] // no '=' at all
     public void MalformedTokensAreIgnored(string token)
     {
         var (perSubsystem, def) = LogPipeline.ParseFilterSpec(token, LogLevel.Info);

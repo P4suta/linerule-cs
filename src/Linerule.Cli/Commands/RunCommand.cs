@@ -12,20 +12,24 @@ internal static class RunCommand
     public static Command Build()
     {
         var cmd = new Command("run", "Start the overlay (default).");
-        cmd.SetAction(async (parseResult, cancellationToken) =>
-        {
-            var path = ConfigLoader.DefaultPath();
-            var loaded = File.Exists(path)
-                ? ConfigLoader.Load(path)
-                : Result.Ok<UserConfig, ConfigError>(UserConfig.Default);
-
-            return loaded switch
+        cmd.SetAction(
+            async (_, cancellationToken) =>
             {
-                Result<UserConfig, ConfigError>.Ok ok => await WindowsApp.RunAsync(ok.Value, cancellationToken).ConfigureAwait(false),
-                Result<UserConfig, ConfigError>.Err err => DiagnosticPrinter.Render(err.Error),
-                _ => 1,
-            };
-        });
+                var path = ConfigLoader.DefaultPath();
+                var loaded = File.Exists(path)
+                    ? ConfigLoader.Load(path)
+                    : Result.Ok<UserConfig, ConfigError>(UserConfig.Default);
+
+                return loaded switch
+                {
+                    Result<UserConfig, ConfigError>.Ok ok => await WindowsApp
+                        .RunAsync(ok.Value, cancellationToken)
+                        .ConfigureAwait(false),
+                    Result<UserConfig, ConfigError>.Err err => DiagnosticPrinter.Render(err.Error),
+                    _ => 1,
+                };
+            }
+        );
         return cmd;
     }
 }

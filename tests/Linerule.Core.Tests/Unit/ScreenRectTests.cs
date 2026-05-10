@@ -2,12 +2,11 @@ namespace Linerule.Core.Tests.Unit;
 
 public sealed class ScreenRectTests
 {
-    private static ScreenRect<Logical> Rect(int x, int y, uint w, uint h) =>
-        new(new Point<Logical>(x, y), w, h);
+    private static ScreenRect<Logical> Rect(int x, int y, uint w, uint h) => new(new Point<Logical>(x, y), w, h);
 
     [Theory]
-    [InlineData(0, 0, true)]   // top-left corner inclusive
-    [InlineData(99, 49, true)]  // bottom-right corner exclusive (just inside)
+    [InlineData(0, 0, true)] // top-left corner inclusive
+    [InlineData(99, 49, true)] // bottom-right corner exclusive (just inside)
     [InlineData(100, 50, false)] // bottom-right corner exclusive (just outside)
     [InlineData(-1, 0, false)]
     [InlineData(0, -1, false)]

@@ -22,8 +22,7 @@ public readonly record struct Thickness
             ? Result.Ok<Thickness, CoreError>(new Thickness((ushort)value))
             : Result.Err<Thickness, CoreError>(new CoreError.Thickness(value));
 
-    public Thickness SaturatingAdd(int delta) =>
-        new((ushort)Math.Clamp((long)Value + delta, MinValue, MaxValue));
+    public Thickness SaturatingAdd(int delta) => new((ushort)Math.Clamp((long)Value + delta, MinValue, MaxValue));
 
     public override string ToString() => $"Thickness({Value})";
 }

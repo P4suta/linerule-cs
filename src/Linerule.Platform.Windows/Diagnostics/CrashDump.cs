@@ -63,7 +63,8 @@ public static class CrashDump
         _log.Info(
             "installed",
             new LogField("dump_dir", Path.GetTempPath()),
-            new LogField("ring_capacity", Logger.RecentEntries().Count));
+            new LogField("ring_capacity", Logger.RecentEntries().Count)
+        );
     }
 
     /// <summary>
@@ -80,10 +81,7 @@ public static class CrashDump
     private static void OnUnhandled(object sender, UnhandledExceptionEventArgs e)
     {
         var ex = e.ExceptionObject as Exception;
-        _log?.Error(
-            "AppDomain.UnhandledException",
-            ex,
-            new LogField("terminating", e.IsTerminating));
+        _log?.Error("AppDomain.UnhandledException", ex, new LogField("terminating", e.IsTerminating));
         Dump("AppDomain.UnhandledException", ex, terminating: e.IsTerminating);
     }
 
@@ -135,7 +133,7 @@ public static class CrashDump
     private static string WriteDumpFile(string trigger, Exception? exception, bool terminating)
     {
         var stamp = Time.GetUtcNow();
-        var name = $"linerule-crash-{stamp:yyyyMMdd-HHmmss-fff}.json";
+        var name = string.Create(CultureInfo.InvariantCulture, $"linerule-crash-{stamp:yyyyMMdd-HHmmss-fff}.json");
         var path = Path.Combine(Path.GetTempPath(), name);
 
         var lastWin32 = Marshal.GetLastWin32Error();
@@ -158,12 +156,19 @@ public static class CrashDump
             "dump written",
             new LogField("path", path),
             new LogField("entries", entries.Count),
-            new LogField("trigger", trigger));
+            new LogField("trigger", trigger)
+        );
 
         return path;
     }
 
-    private static void WriteHeader(Utf8JsonWriter w, string trigger, DateTimeOffset stamp, bool terminating, int lastWin32)
+    private static void WriteHeader(
+        Utf8JsonWriter w,
+        string trigger,
+        DateTimeOffset stamp,
+        bool terminating,
+        int lastWin32
+    )
     {
         w.WriteString("trigger", trigger);
         w.WriteString("timestamp", stamp.ToString("O", CultureInfo.InvariantCulture));
@@ -282,7 +287,8 @@ public static class CrashDump
             _log?.Warn(
                 "state snapshot threw",
                 new LogField("type", ex.GetType().FullName ?? "?"),
-                new LogField("msg", ex.Message));
+                new LogField("msg", ex.Message)
+            );
             return null;
         }
     }

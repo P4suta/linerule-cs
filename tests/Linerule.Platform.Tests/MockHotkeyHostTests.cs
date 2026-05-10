@@ -9,7 +9,10 @@ public sealed class MockHotkeyHostTests
     public async Task Send_routes_action_through_subscription()
     {
         await using var host = new global::Linerule.Platform.Mock.MockHotkeyHost();
-        var chord = new ChordSpec(new Modifiers(true, true, false, false), new KeyCode.Letter((byte)'R'));
+        var chord = new ChordSpec(
+            new Modifiers(Ctrl: true, Alt: true, Shift: false, Meta: false),
+            new KeyCode.Letter((byte)'R')
+        );
         host.Register(chord, OverlayAction.CycleMode.Instance);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));

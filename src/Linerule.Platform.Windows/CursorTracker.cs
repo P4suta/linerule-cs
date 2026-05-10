@@ -14,7 +14,7 @@ namespace Linerule.Platform.Windows;
 /// CsWin32 metadata quirks where the Win32 <c>POINT</c> type sometimes fails
 /// to be generated for this combination of TFM and metadata version.
 /// </summary>
-public sealed class CursorTracker(uint dpi) : IMouseTracker
+public sealed partial class CursorTracker(uint dpi) : IMouseTracker
 {
     private static readonly LoggerHandle Log = Logger.For(Subsystems.CursorTracker);
 
@@ -35,7 +35,8 @@ public sealed class CursorTracker(uint dpi) : IMouseTracker
                     "GetCursorPos failed",
                     new LogField("count", n),
                     new LogField("err", err),
-                    new LogField("err_name", name));
+                    new LogField("err_name", name)
+                );
             }
             return null;
         }
@@ -46,8 +47,8 @@ public sealed class CursorTracker(uint dpi) : IMouseTracker
             _failureCount = 0;
         }
 
-        var logicalX = (int)Math.Round(raw.X / _scale);
-        var logicalY = (int)Math.Round(raw.Y / _scale);
+        var logicalX = (int)Math.Round(raw.X / _scale, MidpointRounding.ToEven);
+        var logicalY = (int)Math.Round(raw.Y / _scale, MidpointRounding.ToEven);
         return new Point<Logical>(logicalX, logicalY);
     }
 
@@ -55,11 +56,11 @@ public sealed class CursorTracker(uint dpi) : IMouseTracker
     [StructLayout(LayoutKind.Sequential)]
     private readonly record struct CursorPosition(int X, int Y);
 
-    private static class NativeBridge
+    private static partial class NativeBridge
     {
-        [DllImport("user32.dll", SetLastError = true)]
+        [LibraryImport("user32.dll", SetLastError = true)]
         [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
         [return: MarshalAs(UnmanagedType.Bool)]
-        public static extern bool GetCursorPos(out CursorPosition lpPoint);
+        public static partial bool GetCursorPos(out CursorPosition lpPoint);
     }
 }

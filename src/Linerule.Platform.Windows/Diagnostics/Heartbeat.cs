@@ -16,7 +16,7 @@ namespace Linerule.Platform.Windows.Diagnostics;
 /// (or anywhere in the spec) to surface it.
 /// </para>
 /// </summary>
-public sealed class Heartbeat : IDisposable
+public sealed partial class Heartbeat : IDisposable
 {
     private static readonly TimeSpan DefaultInterval = TimeSpan.FromSeconds(1);
 
@@ -33,7 +33,7 @@ public sealed class Heartbeat : IDisposable
         _snapshot = snapshot ?? throw new ArgumentNullException(nameof(snapshot));
         _log = Logger.For(Subsystems.Heartbeat);
         Interval = interval ?? DefaultInterval;
-        _timer = new Timer(_ => Tick(), null, Interval, Interval);
+        _timer = new Timer(_ => Tick(), state: null, Interval, Interval);
     }
 
     private void Tick()
@@ -58,7 +58,11 @@ public sealed class Heartbeat : IDisposable
         }
         catch (Exception ex)
         {
-            _log.Warn("snapshot threw", new LogField("type", ex.GetType().FullName ?? "?"), new LogField("msg", ex.Message));
+            _log.Warn(
+                "snapshot threw",
+                new LogField("type", ex.GetType().FullName ?? "?"),
+                new LogField("msg", ex.Message)
+            );
         }
     }
 

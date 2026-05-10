@@ -39,17 +39,13 @@ public sealed class LoggerHandle
 
     public bool IsEnabled(LogLevel level) => _pipeline.IsEnabled(Subsystem, level);
 
-    public void Trace(string step, params LogField[]? fields) =>
-        Emit(LogLevel.Trace, step, fields, null);
+    public void Trace(string step, params LogField[]? fields) => Emit(LogLevel.Trace, step, fields, ex: null);
 
-    public void Debug(string step, params LogField[]? fields) =>
-        Emit(LogLevel.Debug, step, fields, null);
+    public void Debug(string step, params LogField[]? fields) => Emit(LogLevel.Debug, step, fields, ex: null);
 
-    public void Info(string step, params LogField[]? fields) =>
-        Emit(LogLevel.Info, step, fields, null);
+    public void Info(string step, params LogField[]? fields) => Emit(LogLevel.Info, step, fields, ex: null);
 
-    public void Warn(string step, params LogField[]? fields) =>
-        Emit(LogLevel.Warn, step, fields, null);
+    public void Warn(string step, params LogField[]? fields) => Emit(LogLevel.Warn, step, fields, ex: null);
 
     public void Error(string step, Exception? ex = null, params LogField[]? fields) =>
         Emit(LogLevel.Error, step, fields, ex);
@@ -60,9 +56,7 @@ public sealed class LoggerHandle
         {
             return;
         }
-        var snapshot = fields is null || fields.Length == 0
-            ? ImmutableArray<LogField>.Empty
-            : ImmutableArray.Create(fields);
+        var snapshot = fields is null || fields.Length == 0 ? [] : ImmutableArray.Create(fields);
         var entry = new LogEntry(
             Timestamp: Time.GetUtcNow(),
             Level: level,
@@ -70,7 +64,8 @@ public sealed class LoggerHandle
             Step: step,
             Context: _pipeline.CurrentContext,
             Fields: snapshot,
-            Exception: ex);
+            Exception: ex
+        );
         _pipeline.Emit(entry);
     }
 }

@@ -56,10 +56,7 @@ public static class Logger
     /// Default: <see cref="LogLevel.Debug"/> in Debug builds,
     /// <see cref="LogLevel.Info"/> in Release.
     /// </param>
-    public static void Initialize(
-        string? logPath = null,
-        int ringCapacity = 200,
-        LogLevel? defaultLevel = null)
+    public static void Initialize(string? logPath = null, int ringCapacity = 200, LogLevel? defaultLevel = null)
     {
         if (Interlocked.Exchange(ref _initialized, 1) != 0)
         {
@@ -92,7 +89,8 @@ public static class Logger
             new LogField("jsonl", path),
             new LogField("default_level", effectiveDefault),
             new LogField("build_config", BuildConfigName()),
-            new LogField("subsystem_overrides", spec ?? string.Empty));
+            new LogField("subsystem_overrides", spec ?? string.Empty)
+        );
     }
 
     /// <summary>
@@ -134,8 +132,11 @@ public static class Logger
     /// </summary>
     public static LoggerHandle For(string subsystem)
     {
-        var p = _pipeline ?? throw new InvalidOperationException(
-            "Logger.For called before Logger.Initialize. The bootstrap order is: Logger.Initialize → CrashDump.Install → ... actual work.");
+        var p =
+            _pipeline
+            ?? throw new InvalidOperationException(
+                "Logger.For called before Logger.Initialize. The bootstrap order is: Logger.Initialize → CrashDump.Install → ... actual work."
+            );
         return new LoggerHandle(p, subsystem);
     }
 
@@ -146,13 +147,12 @@ public static class Logger
     public static Guid RunId => _pipeline?.RunId ?? Guid.Empty;
 
     /// <summary>Snapshot of the last N entries (oldest first), for crash dumps.</summary>
-    public static IReadOnlyList<LogEntry> RecentEntries() =>
-        _ringBuffer?.Snapshot() ?? Array.Empty<LogEntry>();
+    public static IReadOnlyList<LogEntry> RecentEntries() => _ringBuffer?.Snapshot() ?? [];
 
     /// <summary>
     /// Push a session-scoped context (e.g. one overlay session). Returns
     /// an <see cref="IDisposable"/> that pops the scope when disposed —
-    /// nest with <c>using</c>.
+    /// nest with <see langword="using"/>.
     /// </summary>
     public static IDisposable PushSession(Guid sessionId) =>
         (_pipeline ?? throw NotInitialized()).PushContext(c => c with { SessionId = sessionId });
@@ -194,6 +194,5 @@ public static class Logger
         "Release";
 #endif
 
-    private static InvalidOperationException NotInitialized() =>
-        new("Logger.PushXxx called before Logger.Initialize.");
+    private static InvalidOperationException NotInitialized() => new("Logger.PushXxx called before Logger.Initialize.");
 }

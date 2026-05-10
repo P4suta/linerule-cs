@@ -24,6 +24,5 @@ public readonly record struct ScreenRect<TSpace>(Point<TSpace> Origin, uint Widt
 
     /// <summary>True iff <paramref name="inner"/> is fully contained (corners inclusive).</summary>
     public bool ContainsRect(ScreenRect<TSpace> inner) =>
-        inner.Left >= Left && inner.Right <= Right &&
-        inner.Top >= Top && inner.Bottom <= Bottom;
+        inner.Left >= Left && inner.Right <= Right && inner.Top >= Top && inner.Bottom <= Bottom;
 }

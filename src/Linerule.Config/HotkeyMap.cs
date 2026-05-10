@@ -12,14 +12,17 @@ public sealed record HotkeyMap(
     string Thinner,
     string MoreOpaque,
     string LessOpaque,
-    string Quit)
+    string Quit
+)
 {
-    public static HotkeyMap Default { get; } = new(
-        CycleMode: "Ctrl+Alt+R",
-        ToggleVisible: "Ctrl+Alt+H",
-        Thicker: "Ctrl+Alt+]",
-        Thinner: "Ctrl+Alt+[",
-        MoreOpaque: "Ctrl+Alt+=",
-        LessOpaque: "Ctrl+Alt+-",
-        Quit: "Ctrl+Alt+Q");
+    public static HotkeyMap Default { get; } =
+        new(
+            CycleMode: "Ctrl+Alt+R",
+            ToggleVisible: "Ctrl+Alt+H",
+            Thicker: "Ctrl+Alt+]",
+            Thinner: "Ctrl+Alt+[",
+            MoreOpaque: "Ctrl+Alt+=",
+            LessOpaque: "Ctrl+Alt+-",
+            Quit: "Ctrl+Alt+Q"
+        );
 }

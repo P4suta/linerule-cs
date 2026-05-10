@@ -9,10 +9,7 @@ namespace Linerule.Core;
 /// Mirrors Rust's <c>StateDelta</c>.
 /// </summary>
 [StructLayout(LayoutKind.Auto)]
-public readonly record struct StateDelta(
-    Mode? Mode,
-    bool? Visible,
-    bool ConfigChanged)
+public readonly record struct StateDelta(Mode? Mode, bool? Visible, bool ConfigChanged)
 {
     public static StateDelta None => default;
 

@@ -23,20 +23,21 @@ public static class Reduce
             OverlayAction.BumpOpacity bo => BumpOpacity(state, bo.Delta),
             OverlayAction.Quit => (state, StateDelta.None),
             _ => throw new System.Diagnostics.UnreachableException(
-                $"unknown OverlayAction variant: {action.GetType().Name}"),
+                $"unknown OverlayAction variant: {action.GetType().Name}"
+            ),
         };
     }
 
     private static (State, StateDelta) CycleMode(State state)
     {
         var nextMode = state.Mode.Cycle();
-        return (state with { Mode = nextMode }, new StateDelta((Mode?)nextMode, null, ConfigChanged: false));
+        return (state with { Mode = nextMode }, new StateDelta((Mode?)nextMode, Visible: null, ConfigChanged: false));
     }
 
     private static (State, StateDelta) ToggleVisible(State state)
     {
         var nextVisible = !state.Visible;
-        return (state with { Visible = nextVisible }, new StateDelta(null, nextVisible, ConfigChanged: false));
+        return (state with { Visible = nextVisible }, new StateDelta(Mode: null, nextVisible, ConfigChanged: false));
     }
 
     private static (State, StateDelta) BumpThickness(State state, int delta)
@@ -48,7 +49,7 @@ public static class Reduce
         }
 
         var nextConfig = state.Config with { Thickness = nextThickness };
-        return (state with { Config = nextConfig }, new StateDelta(null, null, ConfigChanged: true));
+        return (state with { Config = nextConfig }, new StateDelta(Mode: null, Visible: null, ConfigChanged: true));
     }
 
     private static (State, StateDelta) BumpOpacity(State state, int delta)
@@ -60,6 +61,6 @@ public static class Reduce
         }
 
         var nextConfig = state.Config with { Opacity = nextOpacity };
-        return (state with { Config = nextConfig }, new StateDelta(null, null, ConfigChanged: true));
+        return (state with { Config = nextConfig }, new StateDelta(Mode: null, Visible: null, ConfigChanged: true));
     }
 }

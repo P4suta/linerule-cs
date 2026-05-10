@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using Linerule.Platform.Windows.Diagnostics;
 using Windows.Win32;
 using Windows.Win32.Foundation;
@@ -37,10 +38,11 @@ internal static class ExStyleSnapshot
         var ex = PInvoke.GetWindowLongPtr(hwnd, WINDOW_LONG_PTR_INDEX.GWL_EXSTYLE);
         log.Debug(
             $"ex-style snapshot ({label})",
-            new LogField("ex_style", $"0x{ex:X8}"),
+            new LogField("ex_style", string.Create(CultureInfo.InvariantCulture, $"0x{ex:X8}")),
             new LogField("transparent", (ex & (long)WINDOW_EX_STYLE.WS_EX_TRANSPARENT) != 0),
             new LogField("noredir", (ex & (long)WINDOW_EX_STYLE.WS_EX_NOREDIRECTIONBITMAP) != 0),
-            new LogField("layered", (ex & (long)WINDOW_EX_STYLE.WS_EX_LAYERED) != 0));
+            new LogField("layered", (ex & (long)WINDOW_EX_STYLE.WS_EX_LAYERED) != 0)
+        );
 
         _enumChildCount = 0;
         _enumLabel = label;
@@ -48,7 +50,8 @@ internal static class ExStyleSnapshot
         Win32Guard.Check(
             PInvoke.EnumChildWindows(hwnd, EnumChildCallback, default),
             $"EnumChildWindows ({label})",
-            log);
+            log
+        );
         if (_enumChildCount == 0)
         {
             log.Debug($"child HWNDs ({label})", new LogField("count", 0));
@@ -65,8 +68,9 @@ internal static class ExStyleSnapshot
             var name = n > 0 ? new string(p, 0, n) : "<unknown>";
             _enumLog?.Debug(
                 $"child HWND ({_enumLabel})",
-                new LogField("hwnd", $"0x{(nint)child.Value:X}"),
-                new LogField("class", name));
+                new LogField("hwnd", string.Create(CultureInfo.InvariantCulture, $"0x{(nint)child.Value:X}")),
+                new LogField("class", name)
+            );
         }
         return true;
     }

@@ -26,7 +26,7 @@ public sealed class ModeTests
     {
         // C# enums are open at the value level (cast-safety valve).
         // The defensive `_ => throw` arm is exercised via an out-of-range cast.
-        var bogus = (Mode)42;
+        const Mode bogus = (Mode)42;
         Assert.Throws<System.Diagnostics.UnreachableException>(() => bogus.Cycle());
     }
 }

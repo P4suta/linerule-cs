@@ -30,7 +30,8 @@ public static class WindowsApp
         Log.Info(
             "RunAsync begin",
             new LogField("jsonl", Logger.LogPath),
-            new LogField("run_id", Logger.RunId.ToString("D")));
+            new LogField("run_id", Logger.RunId.ToString("D"))
+        );
 
         try
         {
@@ -66,12 +67,10 @@ public static class WindowsApp
         var cursor = new CursorTracker(overlay.Dpi);
 
         RegisterAll(hotkeys, config.Hotkeys);
-        Log.Info(
-            "hotkeys registered",
-            new LogField("hint", "press Ctrl+Alt+R to cycle, Ctrl+Alt+Q to quit"));
+        Log.Info("hotkeys registered", new LogField("hint", "press Ctrl+Alt+R to cycle, Ctrl+Alt+Q to quit"));
 
         using var foregroundHook = new ForegroundHook(overlay.ReassertTopmost);
-        using var registration = cancellationToken.Register(queue.EnqueueEventLoopExit);
+        await using var registration = cancellationToken.Register(queue.EnqueueEventLoopExit);
         var loop = new TickLoop(overlay, hotkeys, cursor, queue);
         loop.Start();
 
@@ -87,7 +86,7 @@ public static class WindowsApp
         queue.RunEventLoop();
         Log.Info("run loop exited");
         loop.Stop();
-        controller.ShutdownQueue();
+        await controller.ShutdownQueueAsync();
         return 0;
     }
 
@@ -104,7 +103,8 @@ public static class WindowsApp
                     HotkeyLog.Warn(
                         "register failed",
                         new LogField("chord", chord),
-                        new LogField("error", err.Error.ToString()));
+                        new LogField("error", err.Error.ToString())
+                    );
                 }
             }
             else if (parsed is Result<ChordSpec, ChordError>.Err err)
@@ -112,7 +112,8 @@ public static class WindowsApp
                 HotkeyLog.Warn(
                     "chord parse failed",
                     new LogField("chord", chord),
-                    new LogField("error", err.Error.ToHumanString()));
+                    new LogField("error", err.Error.ToHumanString())
+                );
             }
         }
     }
@@ -169,13 +170,13 @@ public static class WindowsApp
         /// across both sinks so a downstream <c>jq</c> query works on both.
         /// </summary>
         public LogField[] Snapshot() =>
-        [
-            new LogField("mode", _state.Mode),
-            new LogField("visible", _state.Visible),
-            new LogField("cursor_x", _lastCursor?.X ?? 0),
-            new LogField("cursor_y", _lastCursor?.Y ?? 0),
-            new LogField("frame_seq", Volatile.Read(ref _frameSeq)),
-        ];
+            [
+                new LogField("mode", _state.Mode),
+                new LogField("visible", _state.Visible),
+                new LogField("cursor_x", _lastCursor?.X ?? 0),
+                new LogField("cursor_y", _lastCursor?.Y ?? 0),
+                new LogField("frame_seq", Volatile.Read(ref _frameSeq)),
+            ];
 
         private void OnTick(object? sender, object args)
         {
@@ -196,7 +197,8 @@ public static class WindowsApp
                         "state changed",
                         new LogField("action", action.GetType().Name),
                         new LogField("mode", _state.Mode),
-                        new LogField("visible", _state.Visible));
+                        new LogField("visible", _state.Visible)
+                    );
                     ApplyFrame();
                 }
             }
@@ -221,9 +223,12 @@ public static class WindowsApp
                 return;
             }
 
-            var pos = _cursor.Poll() ?? new Point<Logical>(
-                _overlay.MonitorBounds.Left + (int)_overlay.MonitorBounds.Width / 2,
-                _overlay.MonitorBounds.Top + (int)_overlay.MonitorBounds.Height / 2);
+            var pos =
+                _cursor.Poll()
+                ?? new Point<Logical>(
+                    _overlay.MonitorBounds.Left + ((int)_overlay.MonitorBounds.Width / 2),
+                    _overlay.MonitorBounds.Top + ((int)_overlay.MonitorBounds.Height / 2)
+                );
             _lastCursor = pos;
             Interlocked.Increment(ref _frameSeq);
             _overlay.Apply(Render.Frame(_state.Mode, pos, _overlay.MonitorBounds, _state.Config));

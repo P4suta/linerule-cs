@@ -36,7 +36,10 @@ internal sealed class RingBufferSink : ILogSink
         }
     }
 
-    public void Flush() { /* no-op */ }
+    public void Flush()
+    {
+        // Ring buffer holds in-memory snapshots only — nothing to flush.
+    }
 
     /// <summary>
     /// Snapshot of the buffer in chronological order (oldest first).

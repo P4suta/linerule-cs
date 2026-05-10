@@ -22,22 +22,15 @@ namespace Linerule.Platform.Windows;
 /// its <c>ProcessesPointerInput = false</c> click-through knob.
 /// </para>
 /// </summary>
-internal sealed class CompositionRenderer
+internal sealed class CompositionRenderer(Compositor compositor, ContainerVisual root)
 {
     /// <summary>Animation duration for cursor-follow easing.</summary>
     private static readonly TimeSpan AnimationDuration = TimeSpan.FromMilliseconds(120);
 
-    private readonly Compositor _compositor;
-    private readonly ContainerVisual _root;
-    private readonly ImplicitAnimationCollection _implicitAnimations;
+    private readonly Compositor _compositor = compositor;
+    private readonly ContainerVisual _root = root;
+    private readonly ImplicitAnimationCollection _implicitAnimations = BuildImplicitAnimations(compositor);
     private readonly List<SpriteVisual> _pool = new(capacity: 4);
-
-    public CompositionRenderer(Compositor compositor, ContainerVisual root)
-    {
-        _compositor = compositor;
-        _root = root;
-        _implicitAnimations = BuildImplicitAnimations(compositor);
-    }
 
     public void Apply(OverlayFrame frame)
     {
@@ -101,7 +94,8 @@ internal sealed class CompositionRenderer
                 X: (float)r.Bounds.Left,
                 Y: (float)r.Bounds.Top,
                 Width: (float)r.Bounds.Width,
-                Height: (float)r.Bounds.Height),
+                Height: (float)r.Bounds.Height
+            ),
             _ => throw new System.Diagnostics.UnreachableException("unknown geometry variant"),
         };
 

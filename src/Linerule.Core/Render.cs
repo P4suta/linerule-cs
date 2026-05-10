@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using System.Globalization;
 
 namespace Linerule.Core;
 
@@ -22,7 +23,8 @@ public static class Render
         Mode mode,
         Point<Logical> cursor,
         ScreenRect<Logical> monitor,
-        OverlayConfig config)
+        OverlayConfig config
+    )
     {
         ArgumentNullException.ThrowIfNull(config);
 
@@ -31,14 +33,17 @@ public static class Render
             Mode.Off => OverlayFrame.Empty,
             Mode.Horizontal => RenderHorizontal(cursor, monitor, config),
             Mode.Vertical => RenderVertical(cursor, monitor, config),
-            _ => throw new System.Diagnostics.UnreachableException($"invalid Mode: {(int)mode}"),
+            _ => throw new System.Diagnostics.UnreachableException(
+                string.Create(CultureInfo.InvariantCulture, $"invalid Mode: {(int)mode}")
+            ),
         };
     }
 
     private static OverlayFrame RenderHorizontal(
         Point<Logical> cursor,
         ScreenRect<Logical> monitor,
-        OverlayConfig config)
+        OverlayConfig config
+    )
     {
         var thickness = config.Thickness.Value;
         var halfH = thickness / 2;
@@ -48,23 +53,23 @@ public static class Render
         var topDim = new ScreenRect<Logical>(
             new Point<Logical>(monitor.Left, monitor.Top),
             monitor.Width,
-            (uint)Math.Max(0, slitTop - monitor.Top));
+            (uint)Math.Max(0, slitTop - monitor.Top)
+        );
         var bottomDim = new ScreenRect<Logical>(
             new Point<Logical>(monitor.Left, slitBottom),
             monitor.Width,
-            (uint)Math.Max(0, monitor.Bottom - slitBottom));
+            (uint)Math.Max(0, monitor.Bottom - slitBottom)
+        );
 
         var maskFill = config.MaskColor.WithAlpha(config.Opacity.Value);
-        return new OverlayFrame(ImmutableArray.Create(
+        return new OverlayFrame([
             Layer.SolidRect(topDim, maskFill),
             Layer.SolidRect(bottomDim, maskFill),
-            BuildIndicator(Mode.Horizontal, monitor)));
+            BuildIndicator(Mode.Horizontal, monitor),
+        ]);
     }
 
-    private static OverlayFrame RenderVertical(
-        Point<Logical> cursor,
-        ScreenRect<Logical> monitor,
-        OverlayConfig config)
+    private static OverlayFrame RenderVertical(Point<Logical> cursor, ScreenRect<Logical> monitor, OverlayConfig config)
     {
         var thickness = config.Thickness.Value;
         var halfW = thickness / 2;
@@ -74,17 +79,20 @@ public static class Render
         var leftDim = new ScreenRect<Logical>(
             new Point<Logical>(monitor.Left, monitor.Top),
             (uint)Math.Max(0, slitLeft - monitor.Left),
-            monitor.Height);
+            monitor.Height
+        );
         var rightDim = new ScreenRect<Logical>(
             new Point<Logical>(slitRight, monitor.Top),
             (uint)Math.Max(0, monitor.Right - slitRight),
-            monitor.Height);
+            monitor.Height
+        );
 
         var maskFill = config.MaskColor.WithAlpha(config.Opacity.Value);
-        return new OverlayFrame(ImmutableArray.Create(
+        return new OverlayFrame([
             Layer.SolidRect(leftDim, maskFill),
             Layer.SolidRect(rightDim, maskFill),
-            BuildIndicator(Mode.Vertical, monitor)));
+            BuildIndicator(Mode.Vertical, monitor),
+        ]);
     }
 
     /// <summary>
@@ -101,11 +109,16 @@ public static class Render
             Mode.Horizontal => new ScreenRect<Logical>(
                 new Point<Logical>(monitor.Right - IndicatorMargin - IndicatorLong, monitor.Top + IndicatorMargin),
                 (uint)IndicatorLong,
-                (uint)IndicatorShort),
+                (uint)IndicatorShort
+            ),
             Mode.Vertical => new ScreenRect<Logical>(
                 new Point<Logical>(monitor.Right - IndicatorMargin - IndicatorShort, monitor.Top + IndicatorMargin),
                 (uint)IndicatorShort,
-                (uint)IndicatorLong),
+                (uint)IndicatorLong
+            ),
+            Mode.Off => throw new InvalidOperationException(
+                "Indicator is only meaningful when an active mode is engaged; Mode.Off has no overlay to indicate."
+            ),
             _ => throw new System.Diagnostics.UnreachableException("indicator only defined for active modes"),
         };
         return Layer.SolidRect(rect, color);
@@ -113,6 +126,5 @@ public static class Render
 
     // For pathological inputs (monitor smaller than thickness) lo > hi can occur
     // — guard before delegating to Math.Clamp, which would throw.
-    private static int ClampToMonitor(int v, int lo, int hi) =>
-        lo > hi ? lo : Math.Clamp(v, lo, hi);
+    private static int ClampToMonitor(int v, int lo, int hi) => lo > hi ? lo : Math.Clamp(v, lo, hi);
 }

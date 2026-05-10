@@ -21,8 +21,7 @@ internal sealed class StdoutSink : ILogSink
     {
         _out = Console.Out;
         _err = Console.Error;
-        _useColor = !Console.IsOutputRedirected
-            && Environment.GetEnvironmentVariable("NO_COLOR") is null;
+        _useColor = !Console.IsOutputRedirected && Environment.GetEnvironmentVariable("NO_COLOR") is null;
     }
 
     public void Write(in LogEntry entry)
@@ -87,32 +86,35 @@ internal sealed class StdoutSink : ILogSink
         }
     }
 
-    private static string LevelTag(LogLevel l) => l switch
-    {
-        LogLevel.Trace => "TRACE",
-        LogLevel.Debug => "DEBUG",
-        LogLevel.Info => "INFO ",
-        LogLevel.Warn => "WARN ",
-        LogLevel.Error => "ERROR",
-        _ => "?????",
-    };
+    private static string LevelTag(LogLevel l) =>
+        l switch
+        {
+            LogLevel.Trace => "TRACE",
+            LogLevel.Debug => "DEBUG",
+            LogLevel.Info => "INFO ",
+            LogLevel.Warn => "WARN ",
+            LogLevel.Error => "ERROR",
+            _ => "?????",
+        };
 
-    private static ConsoleColor ColorFor(LogLevel l) => l switch
-    {
-        LogLevel.Trace => ConsoleColor.DarkGray,
-        LogLevel.Debug => ConsoleColor.Gray,
-        LogLevel.Info => ConsoleColor.White,
-        LogLevel.Warn => ConsoleColor.Yellow,
-        LogLevel.Error => ConsoleColor.Red,
-        _ => ConsoleColor.White,
-    };
+    private static ConsoleColor ColorFor(LogLevel l) =>
+        l switch
+        {
+            LogLevel.Trace => ConsoleColor.DarkGray,
+            LogLevel.Debug => ConsoleColor.Gray,
+            LogLevel.Info => ConsoleColor.White,
+            LogLevel.Warn => ConsoleColor.Yellow,
+            LogLevel.Error => ConsoleColor.Red,
+            _ => ConsoleColor.White,
+        };
 
-    private static string FormatValue(object? v) => v switch
-    {
-        null => "null",
-        string s => s,
-        bool b => b ? "true" : "false",
-        IFormattable f => f.ToString(null, CultureInfo.InvariantCulture),
-        _ => v.ToString() ?? "null",
-    };
+    private static string FormatValue(object? v) =>
+        v switch
+        {
+            null => "null",
+            string s => s,
+            bool b => b ? "true" : "false",
+            IFormattable f => f.ToString(format: null, CultureInfo.InvariantCulture),
+            _ => v.ToString() ?? "null",
+        };
 }

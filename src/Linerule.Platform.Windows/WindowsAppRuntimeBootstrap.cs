@@ -8,7 +8,7 @@ namespace Linerule.Platform.Windows;
 /// <c>Application</c>). Must run before any <c>Microsoft.UI.*</c> API call.
 /// See <c>docs/adr/0001-tech-stack.md</c> §"WindowsAppRuntime bootstrap".
 /// </summary>
-public sealed class WindowsAppRuntimeBootstrap : IDisposable
+public sealed partial class WindowsAppRuntimeBootstrap : IDisposable
 {
     private bool _disposed;
 

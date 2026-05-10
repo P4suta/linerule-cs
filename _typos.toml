@@ -25,6 +25,15 @@ Cli = "Cli"
 # Japanese romanization tokens that often live in code/comments.
 jis = "jis"
 sjis = "sjis"
+# Spectre.Console package — typos thinks "Spectre" should be "Specter".
+Spectre = "Spectre"
+# WindowsAppSDK property `ShouldComputeInputPris` — "Pris" is the
+# WinAppSDK abbreviation for "PRI resources" (Package Resource Index).
+Pris = "Pris"
+# Windows acronyms.
+SEH = "SEH"   # Structured Exception Handling
+DComp = "DComp"  # DirectComposition
+LWA = "LWA"   # LayeredWindowAttributes flag prefix
 
 [files]
 extend-exclude = [

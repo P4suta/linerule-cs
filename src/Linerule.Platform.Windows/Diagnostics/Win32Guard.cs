@@ -1,5 +1,6 @@
 using System;
 using System.ComponentModel;
+using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using Windows.Win32.Foundation;
@@ -39,13 +40,13 @@ namespace Linerule.Platform.Windows.Diagnostics;
 /// </code>
 ///
 /// The xtask <c>strict-code</c> rule rejects raw <c>PInvoke.</c> calls
-/// outside this file (escape hatch: a <c>// Win32Guard: explicitly
-/// unguarded — &lt;reason&gt;</c> comment on the same line).
+/// outside this file (escape hatch: a <code>// Win32Guard: explicitly
+/// unguarded — &lt;reason&gt;</code> comment on the same line).
 /// </summary>
 internal static class Win32Guard
 {
     /// <summary>
-    /// Returns the BOOL; on <c>false</c>, emits a WARN entry with caller
+    /// Returns the BOOL; on <see langword="false"/>, emits a WARN entry with caller
     /// info + decoded last error.
     /// </summary>
     public static bool Check(
@@ -53,7 +54,8 @@ internal static class Win32Guard
         string operation,
         LoggerHandle log,
         [CallerMemberName] string? caller = null,
-        [CallerLineNumber] int line = 0)
+        [CallerLineNumber] int line = 0
+    )
     {
         if (ok)
         {
@@ -65,7 +67,8 @@ internal static class Win32Guard
             new LogField("op", operation),
             new LogField("err", err),
             new LogField("err_name", DecodeName(err)),
-            new LogField("caller", $"{caller ?? "?"}:{line}"));
+            new LogField("caller", string.Create(CultureInfo.InvariantCulture, $"{caller ?? "?"}:{line}"))
+        );
         return false;
     }
 
@@ -79,7 +82,8 @@ internal static class Win32Guard
         string operation,
         LoggerHandle log,
         [CallerMemberName] string? caller = null,
-        [CallerLineNumber] int line = 0)
+        [CallerLineNumber] int line = 0
+    )
     {
         if (ok)
         {
@@ -93,7 +97,8 @@ internal static class Win32Guard
             new LogField("op", operation),
             new LogField("err", err),
             new LogField("err_name", name),
-            new LogField("caller", $"{caller ?? "?"}:{line}"));
+            new LogField("caller", string.Create(CultureInfo.InvariantCulture, $"{caller ?? "?"}:{line}"))
+        );
         throw new Win32Exception(err, $"{operation}: {name} (0x{err:X8})");
     }
 
@@ -106,7 +111,8 @@ internal static class Win32Guard
         string operation,
         LoggerHandle log,
         [CallerMemberName] string? caller = null,
-        [CallerLineNumber] int line = 0)
+        [CallerLineNumber] int line = 0
+    )
     {
         if (h != HWND.Null)
         {
@@ -120,7 +126,8 @@ internal static class Win32Guard
             new LogField("op", operation),
             new LogField("err", err),
             new LogField("err_name", name),
-            new LogField("caller", $"{caller ?? "?"}:{line}"));
+            new LogField("caller", FormatCaller(caller, line))
+        );
         throw new Win32Exception(err, $"{operation}: returned NULL — {name} (0x{err:X8})");
     }
 
@@ -133,7 +140,8 @@ internal static class Win32Guard
         string operation,
         LoggerHandle log,
         [CallerMemberName] string? caller = null,
-        [CallerLineNumber] int line = 0)
+        [CallerLineNumber] int line = 0
+    )
     {
         if (hr >= 0)
         {
@@ -144,7 +152,8 @@ internal static class Win32Guard
             ex: null,
             new LogField("op", operation),
             new LogField("hr", $"0x{hr:X8}"),
-            new LogField("caller", $"{caller ?? "?"}:{line}"));
+            new LogField("caller", FormatCaller(caller, line))
+        );
         Marshal.ThrowExceptionForHR(hr);
     }
 
@@ -160,47 +169,55 @@ internal static class Win32Guard
         return (err, DecodeName(err));
     }
 
+    /// <summary>Culture-invariant <c>caller:line</c> formatter (avoids MA0076).</summary>
+    private static string FormatCaller(string? caller, int line) =>
+        string.Create(CultureInfo.InvariantCulture, $"{caller ?? "?"}:{line}");
+
     /// <summary>
     /// Decode the most common Win32 error codes to their symbolic name.
     /// For unknown codes, returns the OS-localized message via
     /// <see cref="Marshal.GetPInvokeErrorMessage(int)"/>, prefixed with
     /// <c>WIN32_</c>.
     /// </summary>
-    public static string DecodeName(int err) => err switch
-    {
-        0 => "ERROR_SUCCESS",
-        2 => "ERROR_FILE_NOT_FOUND",
-        3 => "ERROR_PATH_NOT_FOUND",
-        5 => "ERROR_ACCESS_DENIED",
-        6 => "ERROR_INVALID_HANDLE",
-        8 => "ERROR_NOT_ENOUGH_MEMORY",
-        14 => "ERROR_OUTOFMEMORY",
-        87 => "ERROR_INVALID_PARAMETER",
-        120 => "ERROR_CALL_NOT_IMPLEMENTED",
-        122 => "ERROR_INSUFFICIENT_BUFFER",
-        126 => "ERROR_MOD_NOT_FOUND",
-        127 => "ERROR_PROC_NOT_FOUND",
-        183 => "ERROR_ALREADY_EXISTS",
-        232 => "ERROR_NO_DATA",
-        998 => "ERROR_NOACCESS",
-        1004 => "ERROR_INVALID_FLAGS",
-        1158 => "ERROR_NO_SYSTEM_RESOURCES",
-        1400 => "ERROR_INVALID_WINDOW_HANDLE",
-        1401 => "ERROR_INVALID_MENU_HANDLE",
-        1402 => "ERROR_INVALID_CURSOR_HANDLE",
-        1403 => "ERROR_INVALID_ACCEL_HANDLE",
-        1404 => "ERROR_INVALID_HOOK_HANDLE",
-        1407 => "ERROR_CANNOT_FIND_WND_CLASS",
-        1408 => "ERROR_WINDOW_OF_OTHER_THREAD",
-        1409 => "ERROR_HOTKEY_ALREADY_REGISTERED",
-        1410 => "ERROR_CLASS_ALREADY_EXISTS",
-        1411 => "ERROR_CLASS_DOES_NOT_EXIST",
-        1412 => "ERROR_CLASS_HAS_WINDOWS",
-        1413 => "ERROR_INVALID_INDEX",
-        1419 => "ERROR_HOTKEY_NOT_REGISTERED",
-        1422 => "ERROR_INVALID_GW_COMMAND",
-        1437 => "ERROR_NO_SCROLLBARS",
-        1444 => "ERROR_INVALID_THREAD_ID",
-        _ => $"WIN32_{err} ({Marshal.GetPInvokeErrorMessage(err)?.Trim() ?? "(no message)"})",
-    };
+    public static string DecodeName(int err) =>
+        err switch
+        {
+            0 => "ERROR_SUCCESS",
+            2 => "ERROR_FILE_NOT_FOUND",
+            3 => "ERROR_PATH_NOT_FOUND",
+            5 => "ERROR_ACCESS_DENIED",
+            6 => "ERROR_INVALID_HANDLE",
+            8 => "ERROR_NOT_ENOUGH_MEMORY",
+            14 => "ERROR_OUTOFMEMORY",
+            87 => "ERROR_INVALID_PARAMETER",
+            120 => "ERROR_CALL_NOT_IMPLEMENTED",
+            122 => "ERROR_INSUFFICIENT_BUFFER",
+            126 => "ERROR_MOD_NOT_FOUND",
+            127 => "ERROR_PROC_NOT_FOUND",
+            183 => "ERROR_ALREADY_EXISTS",
+            232 => "ERROR_NO_DATA",
+            998 => "ERROR_NOACCESS",
+            1004 => "ERROR_INVALID_FLAGS",
+            1158 => "ERROR_NO_SYSTEM_RESOURCES",
+            1400 => "ERROR_INVALID_WINDOW_HANDLE",
+            1401 => "ERROR_INVALID_MENU_HANDLE",
+            1402 => "ERROR_INVALID_CURSOR_HANDLE",
+            1403 => "ERROR_INVALID_ACCEL_HANDLE",
+            1404 => "ERROR_INVALID_HOOK_HANDLE",
+            1407 => "ERROR_CANNOT_FIND_WND_CLASS",
+            1408 => "ERROR_WINDOW_OF_OTHER_THREAD",
+            1409 => "ERROR_HOTKEY_ALREADY_REGISTERED",
+            1410 => "ERROR_CLASS_ALREADY_EXISTS",
+            1411 => "ERROR_CLASS_DOES_NOT_EXIST",
+            1412 => "ERROR_CLASS_HAS_WINDOWS",
+            1413 => "ERROR_INVALID_INDEX",
+            1419 => "ERROR_HOTKEY_NOT_REGISTERED",
+            1422 => "ERROR_INVALID_GW_COMMAND",
+            1437 => "ERROR_NO_SCROLLBARS",
+            1444 => "ERROR_INVALID_THREAD_ID",
+            _ => string.Create(
+                CultureInfo.InvariantCulture,
+                $"WIN32_{err} ({Marshal.GetPInvokeErrorMessage(err)?.Trim() ?? "(no message)"})"
+            ),
+        };
 }

@@ -1,5 +1,4 @@
 <Project>
-
   <!--
     linerule-cs / single source of truth for build + analyzer config.
     Per-project NoWarn, SuppressMessage, and #pragma warning disable are
@@ -56,5 +55,4 @@
     <PackageReference Include="Roslynator.Analyzers" PrivateAssets="all" />
     <PackageReference Include="SonarAnalyzer.CSharp" PrivateAssets="all" />
   </ItemGroup>
-
 </Project>

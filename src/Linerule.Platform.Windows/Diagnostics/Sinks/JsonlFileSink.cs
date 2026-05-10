@@ -20,13 +20,9 @@ namespace Linerule.Platform.Windows.Diagnostics.Sinks;
 /// pivot on any field. Writes are flushed per entry — crash-safe at the cost
 /// of a syscall per line (acceptable at our event volume).
 /// </summary>
-internal sealed class JsonlFileSink : ILogSink, IDisposable
+internal sealed partial class JsonlFileSink : ILogSink, IDisposable
 {
-    private static readonly JsonWriterOptions WriterOptions = new()
-    {
-        Indented = false,
-        SkipValidation = true,
-    };
+    private static readonly JsonWriterOptions WriterOptions = new() { Indented = false, SkipValidation = true };
 
     private readonly Lock _gate = new();
     private readonly StreamWriter _writer;
@@ -39,9 +35,15 @@ internal sealed class JsonlFileSink : ILogSink, IDisposable
     {
         Path = path;
         Directory.CreateDirectory(System.IO.Path.GetDirectoryName(path) ?? ".");
-        var stream = new FileStream(path, FileMode.Append, FileAccess.Write, FileShare.Read,
-            bufferSize: 4096, FileOptions.WriteThrough);
-        _writer = new StreamWriter(stream, new UTF8Encoding(false));
+        var stream = new FileStream(
+            path,
+            FileMode.Append,
+            FileAccess.Write,
+            FileShare.Read,
+            bufferSize: 4096,
+            FileOptions.WriteThrough
+        );
+        _writer = new StreamWriter(stream, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
         _buffer = new ArrayBufferWriter<byte>(512);
     }
 
@@ -188,13 +190,14 @@ internal sealed class JsonlFileSink : ILogSink, IDisposable
         }
     }
 
-    private static string LevelToken(LogLevel l) => l switch
-    {
-        LogLevel.Trace => "trace",
-        LogLevel.Debug => "debug",
-        LogLevel.Info => "info",
-        LogLevel.Warn => "warn",
-        LogLevel.Error => "error",
-        _ => "info",
-    };
+    private static string LevelToken(LogLevel l) =>
+        l switch
+        {
+            LogLevel.Trace => "trace",
+            LogLevel.Debug => "debug",
+            LogLevel.Info => "info",
+            LogLevel.Warn => "warn",
+            LogLevel.Error => "error",
+            _ => "info",
+        };
 }

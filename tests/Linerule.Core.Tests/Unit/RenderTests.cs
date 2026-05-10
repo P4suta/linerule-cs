@@ -2,8 +2,7 @@ namespace Linerule.Core.Tests.Unit;
 
 public sealed class RenderTests
 {
-    private static readonly ScreenRect<Logical> Monitor =
-        new(new Point<Logical>(0, 0), 1920, 1080);
+    private static readonly ScreenRect<Logical> Monitor = new(new Point<Logical>(0, 0), 1920, 1080);
 
     private static readonly Point<Logical> Cursor = new(960, 540);
 
@@ -62,10 +61,7 @@ public sealed class RenderTests
     [Fact]
     public void Mask_uses_opacity_override_on_MaskColor_alpha()
     {
-        var cfg = OverlayConfig.Default with
-        {
-            Opacity = ((Result<Opacity, CoreError>.Ok)Opacity.TryCreate(50)).Value,
-        };
+        var cfg = OverlayConfig.Default with { Opacity = ((Result<Opacity, CoreError>.Ok)Opacity.TryCreate(50)).Value };
         var frame = Render.Frame(Mode.Horizontal, Cursor, Monitor, cfg);
         var solid = (Brush.Solid)frame.Layers[0].Brush;
         Assert.Equal(50, solid.Color.A);

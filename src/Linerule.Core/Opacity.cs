@@ -25,8 +25,7 @@ public readonly record struct Opacity
             : Result.Err<Opacity, CoreError>(new CoreError.Opacity(value));
 
     /// <summary>Saturating add: <c>BumpOpacity</c> uses this for hotkey-driven adjustment.</summary>
-    public Opacity SaturatingAdd(int delta) =>
-        new((byte)Math.Clamp((long)Value + delta, MinValue, MaxValue));
+    public Opacity SaturatingAdd(int delta) => new((byte)Math.Clamp((long)Value + delta, MinValue, MaxValue));
 
     public override string ToString() => $"Opacity({Value})";
 }

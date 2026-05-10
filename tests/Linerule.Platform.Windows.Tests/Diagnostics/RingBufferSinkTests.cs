@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Immutable;
+using System.Globalization;
 using Linerule.Platform.Windows.Diagnostics;
 using Linerule.Platform.Windows.Diagnostics.Sinks;
 
@@ -27,7 +28,7 @@ public sealed class RingBufferSinkTests
         var ring = new RingBufferSink(5);
         for (var i = 0; i < 3; i++)
         {
-            ring.Write(EntryWithStep($"step-{i}"));
+            ring.Write(EntryWithStep(Step(i)));
         }
         var snap = ring.Snapshot();
         Assert.Equal(3, snap.Length);
@@ -42,7 +43,7 @@ public sealed class RingBufferSinkTests
         var ring = new RingBufferSink(3);
         for (var i = 0; i < 5; i++)
         {
-            ring.Write(EntryWithStep($"step-{i}"));
+            ring.Write(EntryWithStep(Step(i)));
         }
         var snap = ring.Snapshot();
         Assert.Equal(3, snap.Length);
@@ -58,13 +59,13 @@ public sealed class RingBufferSinkTests
         var ring = new RingBufferSink(4);
         for (var i = 0; i < 4; i++)
         {
-            ring.Write(EntryWithStep($"step-{i}"));
+            ring.Write(EntryWithStep(Step(i)));
         }
         var snap = ring.Snapshot();
         Assert.Equal(4, snap.Length);
         for (var i = 0; i < 4; i++)
         {
-            Assert.Equal($"step-{i}", snap[i].Step);
+            Assert.Equal(Step(i), snap[i].Step);
         }
     }
 
@@ -80,6 +81,8 @@ public sealed class RingBufferSinkTests
         Assert.Equal("first", snap1[0].Step);
     }
 
+    private static string Step(int i) => string.Create(CultureInfo.InvariantCulture, $"step-{i}");
+
     private static LogEntry EntryWithStep(string step) =>
         new(
             Timestamp: new DateTimeOffset(2026, 5, 11, 0, 0, 0, TimeSpan.Zero),
@@ -87,6 +90,7 @@ public sealed class RingBufferSinkTests
             Subsystem: "Test",
             Step: step,
             Context: new LogContext(Guid.Empty),
-            Fields: ImmutableArray<LogField>.Empty,
-            Exception: null);
+            Fields: [],
+            Exception: null
+        );
 }

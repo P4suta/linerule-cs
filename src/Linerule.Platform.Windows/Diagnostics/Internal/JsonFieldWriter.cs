@@ -79,7 +79,7 @@ internal static class JsonFieldWriter
                 w.WriteStringValue(e.ToString());
                 break;
             case IFormattable fm:
-                w.WriteStringValue(fm.ToString(null, CultureInfo.InvariantCulture));
+                w.WriteStringValue(fm.ToString(format: null, CultureInfo.InvariantCulture));
                 break;
             default:
                 w.WriteStringValue(value.ToString() ?? string.Empty);

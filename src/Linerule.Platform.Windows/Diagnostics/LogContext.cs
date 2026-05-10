@@ -16,4 +16,5 @@ public readonly record struct LogContext(
     System.Guid RunId,
     System.Guid? SessionId = null,
     long? FrameSeq = null,
-    string? ActivityId = null);
+    string? ActivityId = null
+);

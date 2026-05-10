@@ -16,7 +16,7 @@ namespace Linerule.Platform.Windows.Win32;
 /// persists for the process lifetime.
 /// </para>
 /// </summary>
-internal static class SystemDispatcherQueue
+internal static partial class SystemDispatcherQueue
 {
     private const int DQTYPE_THREAD_CURRENT = 2;
     private const int DQTAT_COM_STA = 2;
@@ -56,12 +56,13 @@ internal static class SystemDispatcherQueue
         public int apartmentType;
     }
 
-    private static class NativeBridge
+    private static partial class NativeBridge
     {
-        [DllImport("CoreMessaging.dll", ExactSpelling = true)]
+        [LibraryImport("CoreMessaging.dll")]
         [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
-        public static extern int CreateDispatcherQueueController(
+        public static partial int CreateDispatcherQueueController(
             DispatcherQueueOptions options,
-            out IntPtr dispatcherQueueController);
+            out IntPtr dispatcherQueueController
+        );
     }
 }

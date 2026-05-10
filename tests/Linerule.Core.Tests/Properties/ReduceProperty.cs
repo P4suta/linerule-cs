@@ -4,14 +4,15 @@ namespace Linerule.Core.Tests.Properties;
 
 public sealed class ReduceProperty
 {
-    private static OverlayAction MakeOverlayAction(byte variantIdx, int delta) => (variantIdx % 5) switch
-    {
-        0 => OverlayAction.CycleMode.Instance,
-        1 => OverlayAction.ToggleVisible.Instance,
-        2 => new OverlayAction.BumpThickness(delta),
-        3 => new OverlayAction.BumpOpacity(delta),
-        _ => OverlayAction.Quit.Instance,
-    };
+    private static OverlayAction MakeOverlayAction(byte variantIdx, int delta) =>
+        (variantIdx % 5) switch
+        {
+            0 => OverlayAction.CycleMode.Instance,
+            1 => OverlayAction.ToggleVisible.Instance,
+            2 => new OverlayAction.BumpThickness(delta),
+            3 => new OverlayAction.BumpOpacity(delta),
+            _ => OverlayAction.Quit.Instance,
+        };
 
     [Property]
     public bool Reduce_preserves_thickness_in_valid_range(byte variantIdx, int delta)

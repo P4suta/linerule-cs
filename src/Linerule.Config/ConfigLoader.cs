@@ -35,7 +35,13 @@ public static class ConfigLoader
         {
             text = File.ReadAllText(path);
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or DirectoryNotFoundException or FileNotFoundException)
+        catch (Exception ex)
+            when (ex
+                    is IOException
+                        or UnauthorizedAccessException
+                        or DirectoryNotFoundException
+                        or FileNotFoundException
+            )
         {
             return Result.Err<UserConfig, ConfigError>(new ConfigError.FileSystem(path, ex.Message));
         }
@@ -44,10 +50,10 @@ public static class ConfigLoader
     }
 
     [System.Diagnostics.CodeAnalysis.RequiresUnreferencedCode(
-        "Tomlyn 2.x's reflection-based TomlSerializer.Deserialize<TomlTable> is the only public API for the untyped DOM. " +
-        "ADR-0010 documents that the TOML loader is opted out of trim/AOT analysis until Tomlyn ships a source-generated TomlTable context.")]
-    [System.Diagnostics.CodeAnalysis.RequiresDynamicCode(
-        "Tomlyn 2.x reflection deserialization. See ADR-0010.")]
+        "Tomlyn 2.x's reflection-based TomlSerializer.Deserialize<TomlTable> is the only public API for the untyped DOM. "
+            + "ADR-0010 documents that the TOML loader is opted out of trim/AOT analysis until Tomlyn ships a source-generated TomlTable context."
+    )]
+    [System.Diagnostics.CodeAnalysis.RequiresDynamicCode("Tomlyn 2.x reflection deserialization. See ADR-0010.")]
     public static Result<UserConfig, ConfigError> ParseString(string text, string? sourcePath = null)
     {
         ArgumentNullException.ThrowIfNull(text);
@@ -59,12 +65,8 @@ public static class ConfigLoader
         }
         catch (TomlException ex)
         {
-            var diag = new ConfigDiagnostic(
-                Message: ex.Message,
-                Source: sourcePath,
-                Span: ExtractFirstSpan(ex));
-            return Result.Err<UserConfig, ConfigError>(
-                new ConfigError.SchemaDiagnostics(ImmutableArray.Create(diag)));
+            var diag = new ConfigDiagnostic(Message: ex.Message, Source: sourcePath, Span: ExtractFirstSpan(ex));
+            return Result.Err<UserConfig, ConfigError>(new ConfigError.SchemaDiagnostics([diag]));
         }
 
         if (model is null)
@@ -76,24 +78,15 @@ public static class ConfigLoader
         var overlay = ReadOverlay(model, sourcePath, diagnostics);
         var hotkeys = ReadHotkeys(model, sourcePath, diagnostics);
 
-        if (diagnostics.Count > 0)
-        {
-            return Result.Err<UserConfig, ConfigError>(
-                new ConfigError.SchemaDiagnostics(diagnostics.ToImmutableArray()));
-        }
-
-        return Result.Ok<UserConfig, ConfigError>(new UserConfig(overlay, hotkeys));
+        return diagnostics.Count > 0
+            ? Result.Err<UserConfig, ConfigError>(new ConfigError.SchemaDiagnostics([.. diagnostics]))
+            : Result.Ok<UserConfig, ConfigError>(new UserConfig(overlay, hotkeys));
     }
 
     private static SourcePosition? ExtractFirstSpan(TomlException ex)
     {
         var first = ex.Diagnostics.FirstOrDefault();
-        if (first is null)
-        {
-            return null;
-        }
-
-        return new SourcePosition(first.Span.Start.Line + 1, first.Span.Start.Column + 1);
+        return first is null ? null : new SourcePosition(first.Span.Start.Line + 1, first.Span.Start.Column + 1);
     }
 
     private static OverlayConfig ReadOverlay(TomlTable root, string? source, List<ConfigDiagnostic> diags)
@@ -105,32 +98,31 @@ public static class ConfigLoader
 
         var mask = ReadRgba(overlay, "mask_color", source, diags) ?? Rgba.DefaultMask;
         var thickness = ReadValidated(
-            overlay, "thickness", source, diags,
+            overlay,
+            "thickness",
+            source,
+            diags,
             v => Thickness.TryCreate((int)v),
-            Thickness.Default);
-        var opacity = ReadValidated(
-            overlay, "opacity", source, diags,
-            v => Opacity.TryCreate((int)v),
-            Opacity.Default);
+            Thickness.Default
+        );
+        var opacity = ReadValidated(overlay, "opacity", source, diags, v => Opacity.TryCreate((int)v), Opacity.Default);
 
         return new OverlayConfig(mask, thickness, opacity);
     }
 
     private static HotkeyMap ReadHotkeys(TomlTable root, string? source, List<ConfigDiagnostic> diags)
     {
-        if (!TryGetTable(root, "hotkeys", out var hk))
-        {
-            return HotkeyMap.Default;
-        }
-
-        return new HotkeyMap(
-            CycleMode: ReadString(hk, "cycle_mode", HotkeyMap.Default.CycleMode, source, diags),
-            ToggleVisible: ReadString(hk, "toggle_visible", HotkeyMap.Default.ToggleVisible, source, diags),
-            Thicker: ReadString(hk, "thicker", HotkeyMap.Default.Thicker, source, diags),
-            Thinner: ReadString(hk, "thinner", HotkeyMap.Default.Thinner, source, diags),
-            MoreOpaque: ReadString(hk, "more_opaque", HotkeyMap.Default.MoreOpaque, source, diags),
-            LessOpaque: ReadString(hk, "less_opaque", HotkeyMap.Default.LessOpaque, source, diags),
-            Quit: ReadString(hk, "quit", HotkeyMap.Default.Quit, source, diags));
+        return !TryGetTable(root, "hotkeys", out var hk)
+            ? HotkeyMap.Default
+            : new HotkeyMap(
+                CycleMode: ReadString(hk, "cycle_mode", HotkeyMap.Default.CycleMode, source, diags),
+                ToggleVisible: ReadString(hk, "toggle_visible", HotkeyMap.Default.ToggleVisible, source, diags),
+                Thicker: ReadString(hk, "thicker", HotkeyMap.Default.Thicker, source, diags),
+                Thinner: ReadString(hk, "thinner", HotkeyMap.Default.Thinner, source, diags),
+                MoreOpaque: ReadString(hk, "more_opaque", HotkeyMap.Default.MoreOpaque, source, diags),
+                LessOpaque: ReadString(hk, "less_opaque", HotkeyMap.Default.LessOpaque, source, diags),
+                Quit: ReadString(hk, "quit", HotkeyMap.Default.Quit, source, diags)
+            );
     }
 
     private static Rgba? ReadRgba(TomlTable parent, string key, string? source, List<ConfigDiagnostic> diags)
@@ -163,10 +155,9 @@ public static class ConfigLoader
 
         if (v is not long l || l is < 0 or > 255)
         {
-            diags.Add(new ConfigDiagnostic(
-                $"`{key}` must be an integer in 0..=255 (got {Stringify(v)})",
-                source,
-                Span: null));
+            diags.Add(
+                new ConfigDiagnostic($"`{key}` must be an integer in 0..=255 (got {Stringify(v)})", source, Span: null)
+            );
             return 0;
         }
 
@@ -179,7 +170,8 @@ public static class ConfigLoader
         string? source,
         List<ConfigDiagnostic> diags,
         Func<long, Result<T, CoreError>> validate,
-        T fallback)
+        T fallback
+    )
     {
         if (!parent.TryGetValue(key, out var v))
         {
@@ -188,10 +180,13 @@ public static class ConfigLoader
 
         if (v is not long l)
         {
-            diags.Add(new ConfigDiagnostic(
-                $"`{key}` must be an integer (got {v?.GetType().Name ?? "null"})",
-                source,
-                Span: null));
+            diags.Add(
+                new ConfigDiagnostic(
+                    $"`{key}` must be an integer (got {v?.GetType().Name ?? "null"})",
+                    source,
+                    Span: null
+                )
+            );
             return fallback;
         }
 
@@ -209,7 +204,13 @@ public static class ConfigLoader
         return fallback;
     }
 
-    private static string ReadString(TomlTable parent, string key, string fallback, string? source, List<ConfigDiagnostic> diags)
+    private static string ReadString(
+        TomlTable parent,
+        string key,
+        string fallback,
+        string? source,
+        List<ConfigDiagnostic> diags
+    )
     {
         if (!parent.TryGetValue(key, out var v))
         {
@@ -218,10 +219,13 @@ public static class ConfigLoader
 
         if (v is not string s)
         {
-            diags.Add(new ConfigDiagnostic(
-                $"`{key}` must be a string (got {v?.GetType().Name ?? "null"})",
-                source,
-                Span: null));
+            diags.Add(
+                new ConfigDiagnostic(
+                    $"`{key}` must be a string (got {v?.GetType().Name ?? "null"})",
+                    source,
+                    Span: null
+                )
+            );
             return fallback;
         }
 
@@ -240,13 +244,14 @@ public static class ConfigLoader
         return false;
     }
 
-    private static string Stringify(object? v) => v switch
-    {
-        null => "null",
-        bool b => b.ToString(CultureInfo.InvariantCulture),
-        long l => l.ToString(CultureInfo.InvariantCulture),
-        double d => d.ToString(CultureInfo.InvariantCulture),
-        string s => $"\"{s}\"",
-        _ => v.GetType().Name,
-    };
+    private static string Stringify(object? v) =>
+        v switch
+        {
+            null => "null",
+            bool b => b.ToString(CultureInfo.InvariantCulture),
+            long l => l.ToString(CultureInfo.InvariantCulture),
+            double d => d.ToString(CultureInfo.InvariantCulture),
+            string s => $"\"{s}\"",
+            _ => v.GetType().Name,
+        };
 }

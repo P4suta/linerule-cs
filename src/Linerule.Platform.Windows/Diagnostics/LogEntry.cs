@@ -19,4 +19,5 @@ public readonly record struct LogEntry(
     string Step,
     LogContext Context,
     ImmutableArray<LogField> Fields,
-    Exception? Exception = null);
+    Exception? Exception = null
+);

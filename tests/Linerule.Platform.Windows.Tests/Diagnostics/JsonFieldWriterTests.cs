@@ -12,7 +12,7 @@ public sealed class JsonFieldWriterTests
     [Fact]
     public void Null_renders_as_json_null()
     {
-        Assert.Equal("\"k\":null", Render("k", null));
+        Assert.Equal("\"k\":null", Render("k", value: null));
     }
 
     [Fact]
@@ -24,8 +24,8 @@ public sealed class JsonFieldWriterTests
     [Fact]
     public void Bool_unquoted()
     {
-        Assert.Equal("\"k\":true", Render("k", true));
-        Assert.Equal("\"k\":false", Render("k", false));
+        Assert.Equal("\"k\":true", Render("k", value: true));
+        Assert.Equal("\"k\":false", Render("k", value: false));
     }
 
     [Theory]
@@ -58,7 +58,20 @@ public sealed class JsonFieldWriterTests
     [Fact]
     public void Guid_quoted_in_D_format()
     {
-        var g = new Guid("12345678-1234-1234-1234-123456789abc");
+        var g = new Guid(
+            0x12345678,
+            0x1234,
+            0x1234,
+            0x12,
+            0x34,
+            0x12,
+            0x34,
+            0x56,
+            0x78,
+            0x9a,
+            0xbc
+        ) /* 12345678-1234-1234-1234-123456789abc */
+        ;
         Assert.Equal("\"k\":\"12345678-1234-1234-1234-123456789abc\"", Render("k", g));
     }
 

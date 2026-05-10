@@ -6,8 +6,5 @@ namespace Linerule.Core;
 /// </summary>
 public sealed record State(Mode Mode, bool Visible, OverlayConfig Config)
 {
-    public static State Default { get; } = new(
-        Mode: Mode.Off,
-        Visible: true,
-        Config: OverlayConfig.Default);
+    public static State Default { get; } = new(Mode: Mode.Off, Visible: true, Config: OverlayConfig.Default);
 }

@@ -16,7 +16,7 @@ namespace Linerule.Core;
 [StructLayout(LayoutKind.Auto)]
 public readonly record struct OverlayFrame(ImmutableArray<Layer> Layers)
 {
-    public static OverlayFrame Empty { get; } = new(ImmutableArray<Layer>.Empty);
+    public static OverlayFrame Empty { get; } = new([]);
 
     public bool IsEmpty => Layers.IsDefaultOrEmpty;
 

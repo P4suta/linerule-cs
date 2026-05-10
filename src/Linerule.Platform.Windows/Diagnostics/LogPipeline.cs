@@ -17,30 +17,22 @@ namespace Linerule.Platform.Windows.Diagnostics;
 /// pipeline itself.
 /// </para>
 /// </summary>
-public sealed class LogPipeline
+public sealed partial class LogPipeline(
+    ImmutableArray<ILogSink> sinks,
+    IReadOnlyDictionary<string, LogLevel> perSubsystem,
+    LogLevel defaultLevel,
+    Guid runId
+)
 {
-    private readonly ImmutableArray<ILogSink> _sinks;
-    private readonly Dictionary<string, LogLevel> _perSubsystem;
-    private readonly LogLevel _defaultLevel;
-    private readonly Guid _runId;
+    private readonly ImmutableArray<ILogSink> _sinks = sinks;
+    private readonly Dictionary<string, LogLevel> _perSubsystem = new(perSubsystem, StringComparer.Ordinal);
+    private readonly LogLevel _defaultLevel = defaultLevel;
+    private readonly Guid _runId = runId;
     private readonly AsyncLocal<LogContext?> _context = new();
-
-    public LogPipeline(
-        ImmutableArray<ILogSink> sinks,
-        IReadOnlyDictionary<string, LogLevel> perSubsystem,
-        LogLevel defaultLevel,
-        Guid runId)
-    {
-        _sinks = sinks;
-        _perSubsystem = new Dictionary<string, LogLevel>(perSubsystem, StringComparer.Ordinal);
-        _defaultLevel = defaultLevel;
-        _runId = runId;
-    }
 
     public Guid RunId => _runId;
 
-    public LogContext CurrentContext =>
-        _context.Value ?? new LogContext(_runId);
+    public LogContext CurrentContext => _context.Value ?? new LogContext(_runId);
 
     public IDisposable PushContext(Func<LogContext, LogContext> mutator)
     {
@@ -77,12 +69,17 @@ public sealed class LogPipeline
     {
         foreach (var s in _sinks)
         {
-            try { s.Flush(); }
-            catch { /* see Emit */ }
+            try
+            {
+                s.Flush();
+            }
+            catch
+            { /* see Emit */
+            }
         }
     }
 
-    private sealed class ContextScope(LogPipeline owner, LogContext? prev) : IDisposable
+    private sealed partial class ContextScope(LogPipeline owner, LogContext? prev) : IDisposable
     {
         private LogPipeline? _owner = owner;
 
@@ -111,7 +108,8 @@ public sealed class LogPipeline
     /// </param>
     public static (Dictionary<string, LogLevel> PerSubsystem, LogLevel Default) ParseFilterSpec(
         string? spec,
-        LogLevel fallbackDefault = LogLevel.Info)
+        LogLevel fallbackDefault = LogLevel.Info
+    )
     {
         var perSubsystem = new Dictionary<string, LogLevel>(StringComparer.Ordinal);
         var defaultLevel = fallbackDefault;
@@ -123,7 +121,7 @@ public sealed class LogPipeline
 
         foreach (var token in spec.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
         {
-            var eq = token.IndexOf('=');
+            var eq = token.IndexOf('=', StringComparison.Ordinal);
             if (eq <= 0 || eq == token.Length - 1)
             {
                 continue;

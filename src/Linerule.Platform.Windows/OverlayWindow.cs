@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
@@ -53,7 +54,7 @@ public sealed class OverlayWindow : IOverlaySurface
     public ScreenRect<Logical> MonitorBounds { get; }
 
     /// <summary>Hex render of an <see cref="HWND"/> for log fields.</summary>
-    private static unsafe string HexHwnd(HWND h) => $"0x{(nint)h.Value:X}";
+    private static unsafe string HexHwnd(HWND h) => string.Create(CultureInfo.InvariantCulture, $"0x{(nint)h.Value:X}");
 
     private OverlayWindow(
         HWND hwnd,
@@ -61,7 +62,8 @@ public sealed class OverlayWindow : IOverlaySurface
         DesktopAttachedSiteBridge bridge,
         ContentIsland island,
         ContainerVisual root,
-        ScreenRect<Logical> monitor)
+        ScreenRect<Logical> monitor
+    )
     {
         _hwnd = hwnd;
         _compositor = compositor;
@@ -74,9 +76,7 @@ public sealed class OverlayWindow : IOverlaySurface
     public static OverlayWindow Create(ScreenRect<Logical> monitor, DispatcherQueue queue)
     {
         ArgumentNullException.ThrowIfNull(queue);
-        Log.Info("create begin",
-            new LogField("monitor_w", monitor.Width),
-            new LogField("monitor_h", monitor.Height));
+        Log.Info("create begin", new LogField("monitor_w", monitor.Width), new LogField("monitor_h", monitor.Height));
 
         EnsureWindowClassRegistered();
         Log.Debug("window class registered", new LogField("class", ClassName));
@@ -93,7 +93,8 @@ public sealed class OverlayWindow : IOverlaySurface
         Win32Guard.Check(
             PInvoke.ShowWindow(hwnd, SHOW_WINDOW_CMD.SW_SHOWNOACTIVATE),
             "ShowWindow(SW_SHOWNOACTIVATE)",
-            Log);
+            Log
+        );
         Log.Info("ShowWindow ok — overlay live");
         ExStyleSnapshot.Capture(hwnd, "after ShowWindow", Log);
 
@@ -114,9 +115,11 @@ public sealed class OverlayWindow : IOverlaySurface
                 hwnd,
                 crKey: new COLORREF(0),
                 bAlpha: 0xCC,
-                dwFlags: LAYERED_WINDOW_ATTRIBUTES_FLAGS.LWA_ALPHA),
+                dwFlags: LAYERED_WINDOW_ATTRIBUTES_FLAGS.LWA_ALPHA
+            ),
             "SetLayeredWindowAttributes(LWA_ALPHA=0xCC) [TEMP]",
-            Log);
+            Log
+        );
     }
 
     private static unsafe HWND CreateHwnd(ScreenRect<Logical> monitor)
@@ -127,37 +130,46 @@ public sealed class OverlayWindow : IOverlaySurface
         // dropped. Swap to WS_EX_LAYERED + LWA_ALPHA — the proven
         // cross-process click-through pairing — and observe whether clicks
         // start landing on Notepad/Explorer beneath the overlay.
-        var ex = WINDOW_EX_STYLE.WS_EX_LAYERED
+        const WINDOW_EX_STYLE ex =
+            WINDOW_EX_STYLE.WS_EX_LAYERED
             | WINDOW_EX_STYLE.WS_EX_TRANSPARENT
             | WINDOW_EX_STYLE.WS_EX_NOACTIVATE
             | WINDOW_EX_STYLE.WS_EX_TOOLWINDOW
             | WINDOW_EX_STYLE.WS_EX_TOPMOST;
-        var style = WINDOW_STYLE.WS_POPUP;
+        const WINDOW_STYLE style = WINDOW_STYLE.WS_POPUP;
 
         fixed (char* className = ClassName)
-        fixed (char* title = "linerule")
         {
-            return Win32Guard.CheckHandle(
-                PInvoke.CreateWindowEx(
-                    dwExStyle: ex,
-                    lpClassName: className,
-                    lpWindowName: title,
-                    dwStyle: style,
-                    X: monitor.Left,
-                    Y: monitor.Top,
-                    nWidth: (int)monitor.Width,
-                    nHeight: (int)monitor.Height,
-                    hWndParent: HWND.Null,
-                    hMenu: default,
-                    hInstance: PInvoke.GetModuleHandle(default(PCWSTR)),
-                    lpParam: null),
-                "CreateWindowExW overlay",
-                Log);
+            fixed (char* title = "linerule")
+            {
+                return Win32Guard.CheckHandle(
+                    PInvoke.CreateWindowEx(
+                        dwExStyle: ex,
+                        lpClassName: className,
+                        lpWindowName: title,
+                        dwStyle: style,
+                        X: monitor.Left,
+                        Y: monitor.Top,
+                        nWidth: (int)monitor.Width,
+                        nHeight: (int)monitor.Height,
+                        hWndParent: HWND.Null,
+                        hMenu: default,
+                        hInstance: PInvoke.GetModuleHandle(default(PCWSTR)),
+                        lpParam: null
+                    ),
+                    "CreateWindowExW overlay",
+                    Log
+                );
+            }
         }
     }
 
-    private static unsafe (Compositor Compositor, DesktopAttachedSiteBridge Bridge, ContentIsland Island, ContainerVisual Root)
-        AttachBridgeAndIsland(HWND hwnd, DispatcherQueue queue)
+    private static unsafe (
+        Compositor Compositor,
+        DesktopAttachedSiteBridge Bridge,
+        ContentIsland Island,
+        ContainerVisual Root
+    ) AttachBridgeAndIsland(HWND hwnd, DispatcherQueue queue)
     {
         var bridgeLog = Logger.For(Subsystems.Bridge);
         var compLog = Logger.For(Subsystems.Composition);
@@ -182,8 +194,9 @@ public sealed class OverlayWindow : IOverlaySurface
         bridge.ProcessesKeyboardInput = false;
         bridgeLog.Info(
             "click-through knob set",
-            new LogField("processes_pointer_input", false),
-            new LogField("processes_keyboard_input", false));
+            new LogField("processes_pointer_input", Value: false),
+            new LogField("processes_keyboard_input", Value: false)
+        );
 
         bridge.Connect(island);
         bridgeLog.Info("bridge.Connect(island) ok");
@@ -230,9 +243,11 @@ public sealed class OverlayWindow : IOverlaySurface
                 cy: 0,
                 uFlags: SET_WINDOW_POS_FLAGS.SWP_NOMOVE
                     | SET_WINDOW_POS_FLAGS.SWP_NOSIZE
-                    | SET_WINDOW_POS_FLAGS.SWP_NOACTIVATE),
+                    | SET_WINDOW_POS_FLAGS.SWP_NOACTIVATE
+            ),
             "SetWindowPos(HWND_TOPMOST)",
-            Log);
+            Log
+        );
     }
 
     private static unsafe void EnsureWindowClassRegistered()
@@ -257,10 +272,7 @@ public sealed class OverlayWindow : IOverlaySurface
                 lpszClassName = className,
             };
 
-            Win32Guard.CheckOrThrow(
-                PInvoke.RegisterClassEx(in wc) != 0,
-                "RegisterClassExW overlay",
-                Log);
+            Win32Guard.CheckOrThrow(PInvoke.RegisterClassEx(in wc) != 0, "RegisterClassExW overlay", Log);
         }
     }
 
@@ -296,15 +308,15 @@ public sealed class OverlayWindow : IOverlaySurface
             }
             return new LRESULT(HTTRANSPARENT);
         }
-        if (msg == WM_LBUTTONDOWN || msg == WM_RBUTTONDOWN || msg == WM_MBUTTONDOWN)
+        if (msg is WM_LBUTTONDOWN or WM_RBUTTONDOWN or WM_MBUTTONDOWN)
         {
             var n = Interlocked.Increment(ref _clickCount);
             WndProcLog.Warn(
                 "click reached overlay (click-through failed)",
                 new LogField("msg", $"0x{msg:X4}"),
-                new LogField("count", n));
+                new LogField("count", n)
+            );
         }
         return PInvoke.DefWindowProc(hwnd, msg, wParam, lParam);
     }
 }
-

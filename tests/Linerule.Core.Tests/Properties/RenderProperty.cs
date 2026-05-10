@@ -5,7 +5,12 @@ namespace Linerule.Core.Tests.Properties;
 public sealed class RenderProperty
 {
     private static (Mode Mode, ScreenRect<Logical> Monitor, Point<Logical> Cursor) ShrinkInputs(
-        byte modeIdx, ushort wRaw, ushort hRaw, int x, int y)
+        byte modeIdx,
+        ushort wRaw,
+        ushort hRaw,
+        int x,
+        int y
+    )
     {
         var mode = (Mode)(modeIdx % 3);
         var w = (uint)Math.Clamp((int)wRaw, 800, 4096);

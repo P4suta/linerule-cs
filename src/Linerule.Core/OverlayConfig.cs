@@ -6,13 +6,8 @@ namespace Linerule.Core;
 /// <see cref="Opacity"/> for the dim region's alpha. The earlier
 /// <c>BarColor</c> field was dropped (see memory: <c>feedback_linerule_typoscope_only</c>).
 /// </summary>
-public sealed record OverlayConfig(
-    Rgba MaskColor,
-    Thickness Thickness,
-    Opacity Opacity)
+public sealed record OverlayConfig(Rgba MaskColor, Thickness Thickness, Opacity Opacity)
 {
-    public static OverlayConfig Default { get; } = new(
-        MaskColor: Rgba.DefaultMask,
-        Thickness: Thickness.Default,
-        Opacity: Opacity.Default);
+    public static OverlayConfig Default { get; } =
+        new(MaskColor: Rgba.DefaultMask, Thickness: Thickness.Default, Opacity: Opacity.Default);
 }
