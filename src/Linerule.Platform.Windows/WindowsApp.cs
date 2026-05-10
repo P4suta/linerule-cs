@@ -412,6 +412,7 @@ public static partial class WindowsApp
                     Interlocked.Increment(ref _frameSeq);
                     _overlay.Apply(Render.Frame(_state.Mode, now, _overlay.MonitorBounds, _state.Config));
                 }
+                UpdateHudOpacity(now);
             }
 
             // Periodic telemetry refresh — no state change, but the FPS /
@@ -428,6 +429,63 @@ public static partial class WindowsApp
             var content = HudComposer.Compose(_state, _hotkeyMap, _clock.Stats.Snapshot(), _clock.Timing);
             _hud.Update(content);
         }
+
+        /// <summary>
+        /// Decay HUD opacity exponentially as the reading-ruler slit
+        /// approaches the HUD panel: <c>opacity = 1 − exp(−distance / decay)</c>.
+        /// Distance is the projected gap between the slit and the HUD
+        /// rectangle along the slit's axis (Y for horizontal mode, X for
+        /// vertical). Overlap → opacity 0; far → opacity ~1. Smooth in both
+        /// directions, no perceptible flicker (per user request 2026-05-11).
+        /// </summary>
+        private void UpdateHudOpacity(Point<Logical> cursor)
+        {
+            // Decay length tunes how aggressively the HUD fades. ~120 logical
+            // pixels means a clear "out of the way" range while keeping the
+            // visible region wide enough that the HUD is fully opaque the
+            // moment the user looks away from it.
+            const float DecayPx = 120f;
+            var distance = SlitToHudGap(cursor);
+            var opacity = 1f - MathF.Exp(-distance / DecayPx);
+            _hud.SetOpacity(opacity);
+        }
+
+        /// <summary>
+        /// HWND-pixel gap between the reading-ruler slit and the HUD
+        /// rectangle along the slit's axis (Y for horizontal mode, X for
+        /// vertical). Returns <see cref="float.PositiveInfinity"/> when the
+        /// overlay is hidden or in <see cref="Mode.Off"/> — the HUD is then
+        /// fully opaque regardless of cursor position.
+        /// </summary>
+        private float SlitToHudGap(Point<Logical> cursor)
+        {
+            if (!_state.Visible)
+            {
+                return float.PositiveInfinity;
+            }
+            var thickness = _state.Config.Thickness.Value;
+            var hudBounds = _hud.Layout;
+            var hudLeft = hudBounds.PositionPx.X;
+            var hudTop = hudBounds.PositionPx.Y;
+            var hudRight = hudLeft + hudBounds.SizePx.X;
+            var hudBottom = hudTop + hudBounds.SizePx.Y;
+            return _state.Mode switch
+            {
+                Mode.Horizontal => AxisGap(cursor.Y - (thickness / 2f), cursor.Y + (thickness / 2f), hudTop, hudBottom),
+                Mode.Vertical => AxisGap(cursor.X - (thickness / 2f), cursor.X + (thickness / 2f), hudLeft, hudRight),
+                Mode.Off => float.PositiveInfinity,
+                _ => throw new System.Diagnostics.UnreachableException("unknown overlay mode"),
+            };
+        }
+
+        /// <summary>
+        /// Non-negative gap between two 1-D intervals on the same axis;
+        /// 0 when they overlap. <c>max(0, max(bLo-aHi, aLo-bHi))</c> is the
+        /// branch-free form of "if either interval ends before the other
+        /// starts, return the gap; else 0".
+        /// </summary>
+        private static float AxisGap(float aLo, float aHi, float bLo, float bHi) =>
+            Math.Max(0f, Math.Max(bLo - aHi, aLo - bHi));
 
         private void ApplyFrame()
         {

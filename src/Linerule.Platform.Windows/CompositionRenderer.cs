@@ -22,15 +22,14 @@ namespace Linerule.Platform.Windows;
 /// </para>
 ///
 /// <para>
-/// <b>Why no implicit animations any more</b>: a previous iteration set
-/// <see cref="Visual.ImplicitAnimations"/> to a 35-120 ms eased curve so
-/// micro-jitter on the mouse poll didn't show through. User feedback
-/// 2026-05-11 ("ガクガクしている") flagged the resulting catch-up lag as
-/// worse than the jitter — at 60 Hz tick + 35 ms easing, a new animation
-/// begins every 16 ms before the previous one finishes, so the rendered
-/// position is always trailing the cursor by 2-3 frames. Direct snap is
-/// the right default for a reading ruler. If easing comes back later it
-/// should be velocity-aware (only smooth slow motion).
+/// <b>Why direct snap</b>: history — 35-120 ms easing at a 60 Hz tick
+/// trailed the cursor 2-3 frames (eased durations longer than the tick
+/// interval kept cascading). 8 ms easing at the matching 120 Hz tick rate
+/// was tried next (2026-05-11) and read as ~10 FPS, far worse than the
+/// snap: each tick re-triggers the animation from the current
+/// <i>animated</i> value, so the GPU compositor never lets a value settle.
+/// Smoothness has to come from VSync-aligned tick scheduling, not from
+/// easing — easing of any duration overlapping the tick rate is wrong.
 /// </para>
 ///
 /// <para>
@@ -77,8 +76,14 @@ internal sealed class CompositionRenderer(Compositor compositor, ContainerVisual
     private static void UpdateVisual(PooledVisual pooled, Layer layer)
     {
         var (rect, color) = Translate(layer);
-        // Direct snap — no implicit animation. The cursor poll IS the
-        // refresh tick; the rendered position should match it 1:1.
+        // Direct snap — the cursor poll IS the refresh tick; the rendered
+        // position should match it 1:1. Implicit animations were tried at
+        // 8 ms linear (matching the tick interval) but felt closer to 10 FPS
+        // than 120 (verified 2026-05-11 user run): each tick re-triggers
+        // the animation from the current animated value, so the GPU
+        // compositor never lets a value settle — net visible motion is
+        // worse than direct snap. Smoothness is to be solved by syncing
+        // the tick to display vsync, not by easing.
         pooled.Visual.Offset = new Vector3(rect.X, rect.Y, 0);
         pooled.Visual.Size = new Vector2(rect.Width, rect.Height);
         // Recolor the existing brush in place — zero alloc on steady state.

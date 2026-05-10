@@ -58,6 +58,8 @@ public sealed class OverlayWindow : IOverlaySurface
     private readonly HWND _hwnd;
     private readonly DesktopWindowTarget _target;
     private readonly ContainerVisual _root;
+    private readonly ContainerVisual _backgroundLayer;
+    private readonly ContainerVisual _foregroundLayer;
     private readonly CompositionRenderer _renderer;
     private bool _disposed;
 
@@ -71,16 +73,18 @@ public sealed class OverlayWindow : IOverlaySurface
     public Compositor Compositor { get; }
 
     /// <summary>
-    /// Create a new top-level Composition layer parented to the overlay's
-    /// root visual. The new container is inserted at the top of the
-    /// child Z-order so it draws above the mask. Each subsystem that wants
+    /// Create a new top-level Composition layer inside the overlay's
+    /// foreground container. Foreground sits above the background container
+    /// (where <see cref="CompositionRenderer"/> paints the mask + stripes),
+    /// so layers handed out here are never dimmed by the focus-mode mask
+    /// even when the mask covers the entire HWND. Each subsystem that wants
     /// its own layer (HUD, tooltips, etc.) calls this once and adds its
     /// visuals to the returned container.
     /// </summary>
     public ContainerVisual CreateLayer()
     {
         var layer = Compositor.CreateContainerVisual();
-        _root.Children.InsertAtTop(layer);
+        _foregroundLayer.Children.InsertAtTop(layer);
         return layer;
     }
 
@@ -99,7 +103,20 @@ public sealed class OverlayWindow : IOverlaySurface
         Compositor = compositor;
         _target = target;
         _root = root;
-        _renderer = new CompositionRenderer(compositor, root);
+
+        // Two z-stacked containers under the root: background hosts the
+        // mask + stripe SpriteVisuals minted by CompositionRenderer (so
+        // they're below everything else); foreground hosts HUD + future
+        // overlays (so they never get dimmed by the mask in focus mode).
+        // Both fill the root via RelativeSizeAdjustment.
+        _backgroundLayer = compositor.CreateContainerVisual();
+        _backgroundLayer.RelativeSizeAdjustment = new System.Numerics.Vector2(1f, 1f);
+        _foregroundLayer = compositor.CreateContainerVisual();
+        _foregroundLayer.RelativeSizeAdjustment = new System.Numerics.Vector2(1f, 1f);
+        _root.Children.InsertAtTop(_backgroundLayer);
+        _root.Children.InsertAtTop(_foregroundLayer); // foreground sits above background.
+
+        _renderer = new CompositionRenderer(compositor, _backgroundLayer);
         MonitorBounds = monitor;
     }
 
@@ -242,6 +259,8 @@ public sealed class OverlayWindow : IOverlaySurface
         }
 
         Log.Info("dispose begin");
+        _foregroundLayer.Dispose();
+        _backgroundLayer.Dispose();
         _target.Dispose();
         Compositor.Dispose();
         Win32Guard.Check(PInvoke.DestroyWindow(_hwnd), "DestroyWindow overlay", Log);

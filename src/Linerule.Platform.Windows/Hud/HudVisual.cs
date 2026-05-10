@@ -12,14 +12,15 @@ namespace Linerule.Platform.Windows.Hud;
 /// <see cref="HudRenderer"/> itself. Public API is
 /// <see cref="Update"/>: call it with new <see cref="HudContent"/>;
 /// equality checks gate re-render so the steady-state cost is one
-/// equality compare.
+/// equality compare. <see cref="SetOpacity"/> lets the tick loop fade the
+/// HUD as the reading-ruler highlight approaches it.
 ///
 /// <para>
-/// <b>Z-order</b>: the constructor inserts the visual at the top of the
-/// supplied parent container. Subsequent inserts to the parent (e.g. by
-/// <c>CompositionRenderer</c>) appear ABOVE the HUD — so we put the HUD
-/// in its OWN sub-container rather than directly in the shared root.
-/// Caller passes that sub-container.
+/// <b>Z-order</b>: the supplied parent is the overlay's foreground
+/// container (<see cref="OverlayWindow.CreateLayer"/>), which sits above
+/// the background container where <c>CompositionRenderer</c> draws the
+/// focus-mode mask + stripes. The HUD therefore never gets dimmed by the
+/// mask, regardless of insertion order on the background side.
 /// </para>
 /// </summary>
 internal sealed partial class HudVisual : IDisposable
@@ -30,14 +31,20 @@ internal sealed partial class HudVisual : IDisposable
     private readonly HudRenderer _renderer;
     private readonly SpriteVisual _visual;
     private readonly CompositionSurfaceBrush _brush;
+    private readonly HudLayout _layout;
     private HudContent? _last;
+    private float _lastOpacity = 1f;
     private bool _disposed;
+
+    /// <summary>HUD rectangle in HWND-pixel space.</summary>
+    public HudLayout Layout => _layout;
 
     public HudVisual(Compositor compositor, ContainerVisual parent, HudLayout layout)
     {
         ArgumentNullException.ThrowIfNull(compositor);
         ArgumentNullException.ThrowIfNull(parent);
         _parent = parent;
+        _layout = layout;
         _renderer = new HudRenderer(compositor, layout);
         _brush = compositor.CreateSurfaceBrush(_renderer.Surface);
         _visual = compositor.CreateSpriteVisual();
@@ -52,6 +59,27 @@ internal sealed partial class HudVisual : IDisposable
             new LogField("size_w", layout.SizePx.X),
             new LogField("size_h", layout.SizePx.Y)
         );
+    }
+
+    /// <summary>
+    /// Fade the entire HUD subtree by mutating the SpriteVisual's
+    /// <see cref="Visual.Opacity"/>. Idempotent for unchanged values
+    /// (saves a WinRT property write per tick on steady-state distance).
+    /// Values are clamped to [0, 1].
+    /// </summary>
+    public void SetOpacity(float opacity)
+    {
+        if (_disposed)
+        {
+            return;
+        }
+        var clamped = Math.Clamp(opacity, 0f, 1f);
+        if (MathF.Abs(clamped - _lastOpacity) < 0.001f)
+        {
+            return;
+        }
+        _visual.Opacity = clamped;
+        _lastOpacity = clamped;
     }
 
     /// <summary>
