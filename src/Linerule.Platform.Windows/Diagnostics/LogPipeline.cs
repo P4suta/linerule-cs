@@ -102,10 +102,19 @@ public sealed class LogPipeline
     /// (case-insensitive level names; <c>*</c> sets the default).
     /// Unknown entries are ignored (resilient to typos).
     /// </summary>
-    public static (Dictionary<string, LogLevel> PerSubsystem, LogLevel Default) ParseFilterSpec(string? spec)
+    /// <param name="spec">Env-var value (e.g. <c>LINERULE_LOG</c>).</param>
+    /// <param name="fallbackDefault">
+    /// Default level to use when no <c>*=...</c> token appears in the spec
+    /// (or when the spec is null/empty). Caller picks this — typically
+    /// <see cref="LogLevel.Debug"/> in Debug builds, <see cref="LogLevel.Info"/>
+    /// in Release.
+    /// </param>
+    public static (Dictionary<string, LogLevel> PerSubsystem, LogLevel Default) ParseFilterSpec(
+        string? spec,
+        LogLevel fallbackDefault = LogLevel.Info)
     {
         var perSubsystem = new Dictionary<string, LogLevel>(StringComparer.Ordinal);
-        var defaultLevel = LogLevel.Info;
+        var defaultLevel = fallbackDefault;
 
         if (string.IsNullOrWhiteSpace(spec))
         {

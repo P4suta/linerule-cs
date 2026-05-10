@@ -50,7 +50,16 @@ public static class Logger
     /// <param name="ringCapacity">
     /// Ring-buffer depth for crash-dump replay. Default 200.
     /// </param>
-    public static void Initialize(string? logPath = null, int ringCapacity = 200)
+    /// <param name="defaultLevel">
+    /// Override the fallback level used when neither
+    /// <c>LINERULE_LOG=*=...</c> nor a per-subsystem rule applies.
+    /// Default: <see cref="LogLevel.Debug"/> in Debug builds,
+    /// <see cref="LogLevel.Info"/> in Release.
+    /// </param>
+    public static void Initialize(
+        string? logPath = null,
+        int ringCapacity = 200,
+        LogLevel? defaultLevel = null)
     {
         if (Interlocked.Exchange(ref _initialized, 1) != 0)
         {
@@ -59,14 +68,15 @@ public static class Logger
 
         var path = logPath ?? Path.Combine(Path.GetTempPath(), "linerule.jsonl");
         var spec = Environment.GetEnvironmentVariable("LINERULE_LOG");
-        var (perSubsystem, defaultLevel) = LogPipeline.ParseFilterSpec(spec);
+        var fallback = defaultLevel ?? BuildConfigDefaultLevel();
+        var (perSubsystem, effectiveDefault) = LogPipeline.ParseFilterSpec(spec, fallback);
 
         var ring = new RingBufferSink(ringCapacity);
         var jsonl = new JsonlFileSink(path);
         var stdout = new StdoutSink();
 
         var sinks = ImmutableArray.Create<ILogSink>(stdout, jsonl, ring);
-        var pipeline = new LogPipeline(sinks, perSubsystem, defaultLevel, Guid.NewGuid());
+        var pipeline = new LogPipeline(sinks, perSubsystem, effectiveDefault, Guid.NewGuid());
 
         _pipeline = pipeline;
         _ringBuffer = ring;
@@ -80,7 +90,8 @@ public static class Logger
             "initialized",
             new LogField("run_id", pipeline.RunId.ToString("D")),
             new LogField("jsonl", path),
-            new LogField("default_level", defaultLevel),
+            new LogField("default_level", effectiveDefault),
+            new LogField("build_config", BuildConfigName()),
             new LogField("subsystem_overrides", spec ?? string.Empty));
     }
 
@@ -156,6 +167,32 @@ public static class Logger
 
     /// <summary>Internal helper — exposes the pipeline to <see cref="CrashDump"/>.</summary>
     internal static LogPipeline? Pipeline => _pipeline;
+
+    /// <summary>
+    /// Build-config-aware default level. <c>DEBUG</c> compilation symbol
+    /// (set by <c>dotnet build -c Debug</c>) means the developer wants
+    /// noise — we default to <see cref="LogLevel.Debug"/>. Release builds
+    /// default to <see cref="LogLevel.Info"/>. Either is overridden by
+    /// the <c>LINERULE_LOG=*=...</c> env var.
+    /// </summary>
+    private static LogLevel BuildConfigDefaultLevel() =>
+#if DEBUG
+        LogLevel.Debug;
+#else
+        LogLevel.Info;
+#endif
+
+    /// <summary>
+    /// Symbolic build-config tag for the bootstrap log line — surfaces
+    /// "is this binary the optimized one or the debuggable one" without
+    /// reading PE flags.
+    /// </summary>
+    private static string BuildConfigName() =>
+#if DEBUG
+        "Debug";
+#else
+        "Release";
+#endif
 
     private static InvalidOperationException NotInitialized() =>
         new("Logger.PushXxx called before Logger.Initialize.");
