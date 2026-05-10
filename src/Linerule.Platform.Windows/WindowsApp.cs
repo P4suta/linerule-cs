@@ -80,7 +80,7 @@ public static class WindowsApp
         using var foregroundHook = new ForegroundHook(overlay.ReassertTopmost);
         await using var registration = cancellationToken.Register(queue.EnqueueEventLoopExit);
         var timing = RenderTiming.Probe(Log);
-        var loop = new TickLoop(overlay, hotkeys, cursor, queue, timing);
+        using var loop = new TickLoop(overlay, hotkeys, cursor, queue, timing);
         loop.Start();
 
         // Hand the loop's state to CrashDump so post-mortem includes the
@@ -236,7 +236,7 @@ public static class WindowsApp
     /// poll — this is the right place for it because the hotkey host already
     /// queues asynchronously, so latency is "next tick" worst case.
     /// </summary>
-    private sealed class TickLoop
+    private sealed class TickLoop : IDisposable
     {
         private readonly OverlayWindow _overlay;
         private readonly HotkeyHost _hotkeys;
@@ -246,6 +246,7 @@ public static class WindowsApp
         private State _state = State.Default;
         private Point<Logical>? _lastCursor;
         private long _frameSeq;
+        private bool _disposed;
 
         public TickLoop(
             OverlayWindow overlay,
@@ -268,9 +269,15 @@ public static class WindowsApp
             _clock.Start();
         }
 
-        public void Stop()
+        public void Stop() => _clock.Stop();
+
+        public void Dispose()
         {
-            _clock.Stop();
+            if (_disposed)
+            {
+                return;
+            }
+            _disposed = true;
             _clock.Dispose();
         }
 
