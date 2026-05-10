@@ -31,13 +31,23 @@ internal sealed partial class JsonlFileSink : ILogSink, IDisposable
 
     public string Path { get; }
 
-    public JsonlFileSink(string path)
+    /// <summary>
+    /// Open the JSONL log. <paramref name="append"/> selects file mode:
+    /// <see langword="true"/> appends to the existing file (history
+    /// preserved across runs, callers responsible for filtering on
+    /// <c>ctx.run_id</c>); <see langword="false"/> truncates so each run
+    /// starts with a clean file (typical dev iteration). Default is
+    /// truncate — the user just wants to see what THIS run did, and the
+    /// crash dumps under <c>%TEMP%\linerule-crash-*.json</c> still
+    /// preserve any catastrophic history.
+    /// </summary>
+    public JsonlFileSink(string path, bool append = false)
     {
         Path = path;
         Directory.CreateDirectory(System.IO.Path.GetDirectoryName(path) ?? ".");
         var stream = new FileStream(
             path,
-            FileMode.Append,
+            append ? FileMode.Append : FileMode.Create,
             FileAccess.Write,
             FileShare.Read,
             bufferSize: 4096,

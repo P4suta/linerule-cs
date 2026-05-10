@@ -93,7 +93,7 @@ public static class WindowsApp
         queue.RunEventLoop();
         Log.Info("run loop exited");
 
-        await ShutdownAsync(loop, hotkeys, overlay, controller).ConfigureAwait(false);
+        await ShutdownAsync(loop, hotkeys, overlay).ConfigureAwait(false);
         return 0;
     }
 
@@ -103,18 +103,23 @@ public static class WindowsApp
     ///   <item>Stop tick timer (no more state mutations / repaints)</item>
     ///   <item>Dispose hotkey host (unregister chords + destroy hidden HWND)</item>
     ///   <item>Dispose overlay (release bridge / island / compositor / HWND)</item>
-    ///   <item><c>ShutdownQueueAsync</c> drains pending WinRT continuations;
-    ///         after this the queue is dead.</item>
     /// </list>
-    /// Wrapping each step in its own try/catch so a stuck disposer doesn't
-    /// prevent later steps from running.
+    /// <para>
+    /// We deliberately do NOT call <c>controller.ShutdownQueueAsync()</c>:
+    /// when invoked from the queue's owner thread (we are; we just returned
+    /// from <c>RunEventLoop</c> on it), it deadlocks because the
+    /// continuation it schedules can never run on a queue that has already
+    /// stopped pumping. The first user end-to-end run on 2026-05-11 spent
+    /// 17-79 s wedged on that exact line. WindowsAppRuntimeBootstrap's
+    /// Dispose (the surrounding <c>using</c>) tears down the SDK cleanly,
+    /// and the OS reclaims the dispatcher queue when the process exits.
+    /// </para>
+    /// <para>
+    /// Each step is wrapped in try/catch so a stuck disposer doesn't block
+    /// later steps.
+    /// </para>
     /// </summary>
-    private static async Task ShutdownAsync(
-        TickLoop loop,
-        HotkeyHost hotkeys,
-        OverlayWindow overlay,
-        DispatcherQueueController controller
-    )
+    private static async Task ShutdownAsync(TickLoop loop, HotkeyHost hotkeys, OverlayWindow overlay)
     {
         await ShutdownStep(
                 "stop tick loop",
@@ -127,7 +132,6 @@ public static class WindowsApp
             .ConfigureAwait(false);
         await ShutdownStep("dispose hotkeys", () => hotkeys.DisposeAsync().AsTask()).ConfigureAwait(false);
         await ShutdownStep("dispose overlay", () => overlay.DisposeAsync().AsTask()).ConfigureAwait(false);
-        await ShutdownStep("ShutdownQueueAsync", () => controller.ShutdownQueueAsync().AsTask()).ConfigureAwait(false);
         Log.Info("shutdown: complete");
 
         // Force-flush stdout/stderr/JSONL — the parent shell otherwise

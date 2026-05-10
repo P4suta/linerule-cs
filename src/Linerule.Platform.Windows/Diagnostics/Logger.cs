@@ -65,11 +65,12 @@ public static class Logger
 
         var path = logPath ?? Path.Combine(Path.GetTempPath(), "linerule.jsonl");
         var spec = Environment.GetEnvironmentVariable("LINERULE_LOG");
+        var append = ParseBoolEnv("LINERULE_LOG_APPEND", defaultValue: false);
         var fallback = defaultLevel ?? BuildConfigDefaultLevel();
         var (perSubsystem, effectiveDefault) = LogPipeline.ParseFilterSpec(spec, fallback);
 
         var ring = new RingBufferSink(ringCapacity);
-        var jsonl = new JsonlFileSink(path);
+        var jsonl = new JsonlFileSink(path, append);
         var stdout = new StdoutSink();
 
         var sinks = ImmutableArray.Create<ILogSink>(stdout, jsonl, ring);
@@ -87,10 +88,30 @@ public static class Logger
             "initialized",
             new LogField("run_id", pipeline.RunId.ToString("D")),
             new LogField("jsonl", path),
+            new LogField("jsonl_mode", append ? "append" : "truncate"),
             new LogField("default_level", effectiveDefault),
             new LogField("build_config", BuildConfigName()),
             new LogField("subsystem_overrides", spec ?? string.Empty)
         );
+    }
+
+    /// <summary>
+    /// Parse a boolean env var. Recognizes <c>1 / true / yes / on</c> as
+    /// true, anything else (including unset) as <paramref name="defaultValue"/>.
+    /// </summary>
+    private static bool ParseBoolEnv(string name, bool defaultValue)
+    {
+        var raw = Environment.GetEnvironmentVariable(name);
+        if (string.IsNullOrEmpty(raw))
+        {
+            return defaultValue;
+        }
+        return raw.Trim().ToLowerInvariant() switch
+        {
+            "1" or "true" or "yes" or "on" => true,
+            "0" or "false" or "no" or "off" => false,
+            _ => defaultValue,
+        };
     }
 
     /// <summary>
