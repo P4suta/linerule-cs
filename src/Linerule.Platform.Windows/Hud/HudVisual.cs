@@ -83,6 +83,13 @@ internal sealed partial class HudVisual : IDisposable
         {
             _parent.Children.Remove(_visual);
         }
+        catch (ObjectDisposedException)
+        {
+            // Parent visual was already torn down — happens by design on
+            // clean shutdown because WindowsApp.ShutdownAsync disposes the
+            // overlay (which closes its Composition tree) before this `using`
+            // scope unwinds. Nothing to remove; not a warning.
+        }
         catch (Exception ex)
         {
             Log.Warn("HUD parent.Remove threw", new LogField("ex", ex.GetType().Name), new LogField("msg", ex.Message));

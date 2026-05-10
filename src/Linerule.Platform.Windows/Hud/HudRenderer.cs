@@ -215,7 +215,11 @@ internal sealed partial class HudRenderer : IDisposable
         }
         try
         {
-            return (CompositionGraphicsDevice)Marshal.GetObjectForIUnknown(graphicsPtr);
+            // Wrap via CsWinRT — CompositionGraphicsDevice is a WinRT runtime
+            // class, not a COM interface, so a direct managed cast off
+            // Marshal.GetObjectForIUnknown would fail (InvalidCastException
+            // against System.__ComObject — verified 2026-05-11).
+            return global::WinRT.MarshalInspectable<CompositionGraphicsDevice>.FromAbi(graphicsPtr);
         }
         finally
         {

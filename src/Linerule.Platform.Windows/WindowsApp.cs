@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using Linerule.Config;
@@ -9,6 +10,8 @@ using Linerule.Platform.Windows.Diagnostics;
 using Linerule.Platform.Windows.Hud;
 using Linerule.Platform.Windows.Rendering;
 using Microsoft.UI.Dispatching;
+using Windows.Win32;
+using Windows.Win32.System.WinRT;
 
 namespace Linerule.Platform.Windows;
 
@@ -24,6 +27,36 @@ public static partial class WindowsApp
     private static readonly LoggerHandle Log = Logger.For(Subsystems.WindowsApp);
     private static readonly LoggerHandle TickLog = Logger.For(Subsystems.TickLoop);
     private static readonly LoggerHandle HotkeyLog = Logger.For(Subsystems.Hotkey);
+
+    // Process-lifetime anchor for the system DispatcherQueueController.
+    // Releasing this would tear down the queue and Windows.UI.Composition
+    // would lose its dispatcher. Holding as object so the COM RCW lives.
+    private static object? _systemDispatcherAnchor;
+
+    /// <summary>
+    /// Set up a <c>Windows.System.DispatcherQueue</c> on the current thread
+    /// via <c>coremessaging!CreateDispatcherQueueController</c>. Required by
+    /// <c>new Windows.UI.Composition.Compositor()</c> (otherwise throws
+    /// <c>RPC_E_WRONG_THREAD</c>). Independent of the
+    /// <see cref="DispatcherQueueController"/> we set up afterwards for
+    /// <see cref="DispatcherQueueTimer"/> usage — per WinAppSDK docs the
+    /// lifted and system dispatcher queues coexist on the same thread.
+    /// </summary>
+    private static unsafe void EnsureSystemDispatcherQueue()
+    {
+        var options = new DispatcherQueueOptions
+        {
+            dwSize = (uint)sizeof(DispatcherQueueOptions),
+            threadType = DISPATCHERQUEUE_THREAD_TYPE.DQTYPE_THREAD_CURRENT,
+            apartmentType = DISPATCHERQUEUE_THREAD_APARTMENTTYPE.DQTAT_COM_NONE,
+        };
+        PInvoke.CreateDispatcherQueueController(options, out var sysController);
+        _systemDispatcherAnchor = sysController;
+        Log.Info(
+            "Windows.System.DispatcherQueueController created",
+            new LogField("rcw_type", _systemDispatcherAnchor?.GetType().Name ?? "null")
+        );
+    }
 
     public static async Task<int> RunAsync(UserConfig config, CancellationToken cancellationToken)
     {
@@ -58,9 +91,11 @@ public static partial class WindowsApp
         using var bootstrap = WindowsAppRuntimeBootstrap.Initialize();
         Log.Info("WindowsAppRuntime bootstrapped");
 
+        EnsureSystemDispatcherQueue();
+
         var controller = DispatcherQueueController.CreateOnCurrentThread();
         var queue = controller.DispatcherQueue;
-        Log.Info("DispatcherQueue created");
+        Log.Info("Microsoft.UI.Dispatching.DispatcherQueue created");
 
         var monitor = MonitorInfo.PrimaryBounds();
         // Both OverlayWindow.DisposeAsync and HotkeyHost.DisposeAsync are
@@ -215,7 +250,12 @@ public static partial class WindowsApp
     private static HudVisual CreateHud(OverlayWindow overlay)
     {
         var dpiScale = overlay.Dpi / 96f;
-        var monitorWidthPx = (int)(overlay.MonitorBounds.Width * dpiScale);
+        // `MonitorBounds.Width` already comes from GetSystemMetrics on a
+        // per-monitor V2 process — i.e. physical pixels of the primary
+        // monitor, matching the HWND's pixel size. Multiplying by dpiScale
+        // would double-scale and push the HUD off-screen
+        // (verified 2026-05-11: HUD at offset_x=3366 on a 2560-wide HWND).
+        var monitorWidthPx = (int)overlay.MonitorBounds.Width;
         var layout = HudLayout.ForMonitor(monitorWidthPx, monitorMarginRightPx: 0, dpiScale: dpiScale);
         var layer = overlay.CreateLayer();
         return new HudVisual(overlay.Compositor, layer, layout);

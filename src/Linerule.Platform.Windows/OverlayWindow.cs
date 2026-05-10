@@ -195,10 +195,11 @@ public sealed class OverlayWindow : IOverlaySurface
     {
         var compLog = Logger.For(Subsystems.Composition);
 
-        // The DispatcherQueue established on this thread by
-        // WindowsApp.RunCoreAsync (Microsoft.UI.Dispatching.DispatcherQueueController.CreateOnCurrentThread)
-        // satisfies Windows.UI.Composition.Compositor's CoreMessaging
-        // prerequisite — both projections share the underlying queue.
+        // `new Compositor()` requires a Windows.System.DispatcherQueue on
+        // the calling thread (RPC_E_WRONG_THREAD otherwise). Microsoft.UI's
+        // lifted dispatcher does NOT satisfy this — they're independent
+        // queues per WinAppSDK docs. WindowsApp.RunCoreAsync stands up
+        // BOTH on this thread (Windows.System first, then Microsoft.UI).
         var compositor = new Compositor();
         compLog.Info("Windows.UI.Composition.Compositor created");
 
@@ -207,7 +208,11 @@ public sealed class OverlayWindow : IOverlaySurface
         DesktopWindowTarget target;
         try
         {
-            target = (DesktopWindowTarget)Marshal.GetObjectForIUnknown(targetPtr);
+            // The native call returns a raw IInspectable* — wrap through
+            // CsWinRT's projection helper so we get a real DesktopWindowTarget
+            // (managed cast directly to a WinRT runtime class would fail
+            // because RCWs project as System.__ComObject).
+            target = global::WinRT.MarshalInspectable<DesktopWindowTarget>.FromAbi(targetPtr);
         }
         finally
         {

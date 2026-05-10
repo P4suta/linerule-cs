@@ -47,9 +47,17 @@ public sealed partial class CursorTracker(uint dpi) : IMouseTracker
             _failureCount = 0;
         }
 
-        var logicalX = (int)Math.Round(raw.X / _scale, MidpointRounding.ToEven);
-        var logicalY = (int)Math.Round(raw.Y / _scale, MidpointRounding.ToEven);
-        return new Point<Logical>(logicalX, logicalY);
+        // GetCursorPos returns physical pixels on a per-monitor V2 process,
+        // which is the same coordinate space as the HWND and the Composition
+        // visual tree (MonitorInfo.PrimaryBounds + CreateWindowExW both
+        // operate in physical pixels here). Passing the value through
+        // unscaled keeps the rendered highlight aligned with the actual
+        // pointer position (verified 2026-05-11: dividing by _scale at 150%
+        // DPI offsets the bar ~1/3 of the screen to the left of the cursor).
+        // The `Point<Logical>` phantom-type label is preserved for now —
+        // the pipeline-wide rename to a more accurate marker is follow-up.
+        _ = _scale; // keep the field for future hi-DPI heuristics.
+        return new Point<Logical>(raw.X, raw.Y);
     }
 
     /// <summary>Win32 <c>POINT</c> ABI-compatible record struct (sequential layout, two ints).</summary>

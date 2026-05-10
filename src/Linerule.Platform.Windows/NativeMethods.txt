@@ -112,3 +112,14 @@ D3D_DRIVER_TYPE
 D3D_FEATURE_LEVEL
 D3D11_SDK_VERSION
 IDXGIDevice
+
+// Windows.System.DispatcherQueueController — set up the system dispatcher
+// on the UI thread (load-bearing for `new Windows.UI.Composition.Compositor()`
+// per ADR-0009 v3). The C# WinRT projection of
+// `Windows.System.DispatcherQueueController.CreateOnCurrentThread` is
+// not exposed by Microsoft.Windows.SDK.NET, so we drop straight to
+// coremessaging.dll's `CreateDispatcherQueueController` via CsWin32.
+CreateDispatcherQueueController
+DispatcherQueueOptions
+DISPATCHERQUEUE_THREAD_TYPE
+DISPATCHERQUEUE_THREAD_APARTMENTTYPE
