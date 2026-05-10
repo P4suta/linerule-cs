@@ -63,6 +63,11 @@ GetModuleHandleW
 EnumChildWindows
 GetClassNameW
 
+// Display refresh rate probe (RenderTiming.Probe).
+EnumDisplaySettingsW
+DEVMODEW
+ENUM_DISPLAY_SETTINGS_MODE
+
 // 5-minute click-through verification path (TEMP — remove after diagnosis):
 // WS_EX_LAYERED + SetLayeredWindowAttributes(LWA_ALPHA) is the only
 // known-good cross-process click-through pairing on Win11.

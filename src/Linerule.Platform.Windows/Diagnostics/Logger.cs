@@ -102,16 +102,14 @@ public static class Logger
     private static bool ParseBoolEnv(string name, bool defaultValue)
     {
         var raw = Environment.GetEnvironmentVariable(name);
-        if (string.IsNullOrEmpty(raw))
-        {
-            return defaultValue;
-        }
-        return raw.Trim().ToLowerInvariant() switch
-        {
-            "1" or "true" or "yes" or "on" => true,
-            "0" or "false" or "no" or "off" => false,
-            _ => defaultValue,
-        };
+        return string.IsNullOrEmpty(raw)
+            ? defaultValue
+            : raw.Trim().ToLowerInvariant() switch
+            {
+                "1" or "true" or "yes" or "on" => true,
+                "0" or "false" or "no" or "off" => false,
+                _ => defaultValue,
+            };
     }
 
     /// <summary>

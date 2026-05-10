@@ -6,6 +6,7 @@ using Linerule.Config;
 using Linerule.Core;
 using Linerule.Platform;
 using Linerule.Platform.Windows.Diagnostics;
+using Linerule.Platform.Windows.Rendering;
 using Microsoft.UI.Dispatching;
 
 namespace Linerule.Platform.Windows;
@@ -78,7 +79,8 @@ public static class WindowsApp
 
         using var foregroundHook = new ForegroundHook(overlay.ReassertTopmost);
         await using var registration = cancellationToken.Register(queue.EnqueueEventLoopExit);
-        var loop = new TickLoop(overlay, hotkeys, cursor, queue);
+        var timing = RenderTiming.Probe(Log);
+        var loop = new TickLoop(overlay, hotkeys, cursor, queue, timing);
         loop.Start();
 
         // Hand the loop's state to CrashDump so post-mortem includes the
@@ -111,7 +113,7 @@ public static class WindowsApp
     /// continuation it schedules can never run on a queue that has already
     /// stopped pumping. The first user end-to-end run on 2026-05-11 spent
     /// 17-79 s wedged on that exact line. WindowsAppRuntimeBootstrap's
-    /// Dispose (the surrounding <c>using</c>) tears down the SDK cleanly,
+    /// Dispose (the surrounding <see langword="using"/>) tears down the SDK cleanly,
     /// and the OS reclaims the dispatcher queue when the process exits.
     /// </para>
     /// <para>
@@ -227,8 +229,12 @@ public static class WindowsApp
     }
 
     /// <summary>
-    /// Per-tick state machine driver. Encapsulates the mutable State + cursor cache so
-    /// <see cref="WindowsApp.RunAsync"/> stays under MA0051's 60-line method ceiling.
+    /// Per-tick state machine driver. Owns the mutable State + cursor cache
+    /// + frame counter; ticks come from a <see cref="RenderClock"/> so the
+    /// timing policy (display-refresh probe, frame budget, stats) is one
+    /// concern away. Hotkey drain happens at the same cadence as the cursor
+    /// poll — this is the right place for it because the hotkey host already
+    /// queues asynchronously, so latency is "next tick" worst case.
     /// </summary>
     private sealed class TickLoop
     {
@@ -236,54 +242,65 @@ public static class WindowsApp
         private readonly HotkeyHost _hotkeys;
         private readonly CursorTracker _cursor;
         private readonly DispatcherQueue _queue;
-        private readonly DispatcherQueueTimer _timer;
+        private readonly RenderClock _clock;
         private State _state = State.Default;
         private Point<Logical>? _lastCursor;
         private long _frameSeq;
 
-        public TickLoop(OverlayWindow overlay, HotkeyHost hotkeys, CursorTracker cursor, DispatcherQueue queue)
+        public TickLoop(
+            OverlayWindow overlay,
+            HotkeyHost hotkeys,
+            CursorTracker cursor,
+            DispatcherQueue queue,
+            RenderTiming timing
+        )
         {
             _overlay = overlay;
             _hotkeys = hotkeys;
             _cursor = cursor;
             _queue = queue;
-            _timer = queue.CreateTimer();
-            // 8 ms ≈ 125 Hz cursor poll. 60 Hz (16 ms) was visibly choppy
-            // on high-refresh monitors — overlay updated once per ~2-4
-            // display frames depending on monitor (60 / 144 / 240 Hz).
-            // 125 Hz keeps us under one display frame on everything up to
-            // 120 Hz monitors and gets tantalizingly close on 144 Hz.
-            // Native CPU cost: a single GetCursorPos + (when moved) one
-            // pure-function Render.Frame call + 3 Composition property
-            // assignments → well under 100 µs per tick.
-            _timer.Interval = TimeSpan.FromMilliseconds(8);
-            _timer.Tick += OnTick;
+            _clock = new RenderClock(queue, timing, OnTick);
         }
 
         public void Start()
         {
             ApplyFrame();
-            _timer.Start();
+            _clock.Start();
         }
 
-        public void Stop() => _timer.Stop();
+        public void Stop()
+        {
+            _clock.Stop();
+            _clock.Dispose();
+        }
 
         /// <summary>
         /// Snapshot used both by <see cref="Heartbeat"/> (live observability)
         /// and by <see cref="CrashDump.RegisterStateSnapshot"/> (post-mortem).
-        /// Returning a single flat field-array keeps the schema identical
-        /// across both sinks so a downstream <c>jq</c> query works on both.
+        /// Returns one flat field-array — same schema in both sinks so a
+        /// single <c>jq</c> query analyses live + dump output.
         /// </summary>
-        public LogField[] Snapshot() =>
+        public LogField[] Snapshot()
+        {
+            var stats = _clock.Stats.Snapshot();
+            return
             [
                 new LogField("mode", _state.Mode),
                 new LogField("visible", _state.Visible),
                 new LogField("cursor_x", _lastCursor?.X ?? 0),
                 new LogField("cursor_y", _lastCursor?.Y ?? 0),
                 new LogField("frame_seq", Volatile.Read(ref _frameSeq)),
+                new LogField("display_hz", _clock.Timing.DisplayRefreshHz),
+                new LogField("tick_hz", _clock.Timing.TickRateHz),
+                new LogField("tick_p50_ms", stats.P50.TotalMilliseconds),
+                new LogField("tick_p99_ms", stats.P99.TotalMilliseconds),
+                new LogField("tick_max_ms", stats.Max.TotalMilliseconds),
+                new LogField("frames_total", stats.TotalFrames),
+                new LogField("frames_dropped", stats.DroppedFrames),
             ];
+        }
 
-        private void OnTick(object? sender, object args)
+        private void OnTick()
         {
             while (_hotkeys.TryDequeue(out var action))
             {

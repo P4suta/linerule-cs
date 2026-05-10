@@ -9,7 +9,7 @@ namespace Linerule.Platform.Windows;
 /// Maps an <see cref="OverlayFrame"/> onto a <see cref="ContainerVisual"/>'s
 /// children. Pools <see cref="SpriteVisual"/>s across frames; each pooled
 /// visual carries a per-instance <see cref="CompositionColorBrush"/> that is
-/// re-coloured in place rather than re-allocated.
+/// re-colored in place rather than re-allocated.
 ///
 /// <para>
 /// Uses <see cref="Windows.UI.Composition"/> (the OS-level WinRT Composition,
@@ -41,17 +41,11 @@ namespace Linerule.Platform.Windows;
 /// allocations on the steady-state path.
 /// </para>
 /// </summary>
-internal sealed class CompositionRenderer
+internal sealed class CompositionRenderer(Compositor compositor, ContainerVisual root)
 {
-    private readonly Compositor _compositor;
-    private readonly ContainerVisual _root;
+    private readonly Compositor _compositor = compositor;
+    private readonly ContainerVisual _root = root;
     private readonly List<PooledVisual> _pool = new(capacity: 4);
-
-    public CompositionRenderer(Compositor compositor, ContainerVisual root)
-    {
-        _compositor = compositor;
-        _root = root;
-    }
 
     public void Apply(OverlayFrame frame)
     {
@@ -86,7 +80,7 @@ internal sealed class CompositionRenderer
         // refresh tick; the rendered position should match it 1:1.
         pooled.Visual.Offset = new Vector3(rect.X, rect.Y, 0);
         pooled.Visual.Size = new Vector2(rect.Width, rect.Height);
-        // Recolour the existing brush in place — zero alloc on steady state.
+        // Recolor the existing brush in place — zero alloc on steady state.
         if (pooled.Brush.Color != color)
         {
             pooled.Brush.Color = color;
@@ -115,6 +109,6 @@ internal sealed class CompositionRenderer
         return (rect, color);
     }
 
-    /// <summary>One reusable visual + its in-place mutable colour brush.</summary>
+    /// <summary>One reusable visual + its in-place mutable color brush.</summary>
     private readonly record struct PooledVisual(SpriteVisual Visual, CompositionColorBrush Brush);
 }
