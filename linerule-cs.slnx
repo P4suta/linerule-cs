@@ -11,6 +11,7 @@
     <Project Path="tests/Linerule.Core.Tests/Linerule.Core.Tests.csproj" />
     <Project Path="tests/Linerule.Config.Tests/Linerule.Config.Tests.csproj" />
     <Project Path="tests/Linerule.Platform.Tests/Linerule.Platform.Tests.csproj" />
+    <Project Path="tests/Linerule.Platform.Windows.Tests/Linerule.Platform.Windows.Tests.csproj" />
   </Folder>
   <Folder Name="/solution/">
     <File Path="Directory.Build.props" />

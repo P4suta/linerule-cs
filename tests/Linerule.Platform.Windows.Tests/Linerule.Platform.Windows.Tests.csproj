@@ -1,0 +1,40 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows10.0.22621.0</TargetFramework>
+    <SupportedOSPlatformVersion>10.0.22621.0</SupportedOSPlatformVersion>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <RootNamespace>Linerule.Platform.Windows.Tests</RootNamespace>
+    <!-- WinAppSDK PRI generation tries to invoke MakePri.exe at build
+         time; on Linux there's no such binary. Kill it (we don't ship
+         resources from the test assembly anyway). Mirrors the same
+         knobs in Linerule.Cli.csproj. -->
+    <AppxGeneratePriEnabled>false</AppxGeneratePriEnabled>
+    <EnableDefaultWindowsAppSdkPRIResourceItems>false</EnableDefaultWindowsAppSdkPRIResourceItems>
+    <ShouldComputeInputPris>false</ShouldComputeInputPris>
+    <!--
+      The diagnostic layer is the only Windows-specific surface that's
+      meaningfully unit-testable on a Linux host (no Win32 PInvoke at
+      runtime in these tests). Win32Guard.DecodeName is a pure switch;
+      LogPipeline / RingBuffer / JsonFieldWriter touch no native APIs.
+    -->
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Linerule.Platform.Windows\Linerule.Platform.Windows.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit.v3" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="FsCheck.Xunit.v3" />
+    <PackageReference Include="coverlet.collector" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+</Project>
