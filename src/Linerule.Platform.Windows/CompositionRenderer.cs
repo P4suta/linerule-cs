@@ -8,35 +8,50 @@ namespace Linerule.Platform.Windows;
 /// <summary>
 /// Maps an <see cref="OverlayFrame"/> onto a <see cref="ContainerVisual"/>'s
 /// children. Pools <see cref="SpriteVisual"/>s across frames; each pooled
-/// visual carries an <see cref="ImplicitAnimationCollection"/> so subsequent
-/// <c>Offset</c>/<c>Size</c> assignments smoothly interpolate on the GPU
-/// compositor thread.
+/// visual carries a per-instance <see cref="CompositionColorBrush"/> that is
+/// re-coloured in place rather than re-allocated.
+///
 /// <para>
 /// Uses <see cref="Windows.UI.Composition"/> (the OS-level WinRT Composition,
 /// stable since Windows 10 1709), <em>not</em> <see cref="Microsoft.UI.Composition"/>:
 /// <see cref="Microsoft.UI.Content.ContentIsland.CreateForSystemVisual"/> requires
 /// <see cref="Windows.UI.Composition.Visual"/> at the root, per the WinAppSDK 1.7
-/// release notes ("ContentIsland can use Windows.UI.Composition.Visuals for
-/// rendering and Win32 window APIs for input processing"). This is what enables
-/// pairing with <see cref="Microsoft.UI.Content.DesktopAttachedSiteBridge"/> and
-/// its <c>ProcessesPointerInput = false</c> click-through knob.
+/// release notes. Choosing the system compositor unlocks the
+/// <c>ProcessesPointerInput = false</c> click-through knob on the attached bridge.
+/// </para>
+///
+/// <para>
+/// <b>Why no implicit animations any more</b>: a previous iteration set
+/// <see cref="Visual.ImplicitAnimations"/> to a 35-120 ms eased curve so
+/// micro-jitter on the mouse poll didn't show through. User feedback
+/// 2026-05-11 ("ガクガクしている") flagged the resulting catch-up lag as
+/// worse than the jitter — at 60 Hz tick + 35 ms easing, a new animation
+/// begins every 16 ms before the previous one finishes, so the rendered
+/// position is always trailing the cursor by 2-3 frames. Direct snap is
+/// the right default for a reading ruler. If easing comes back later it
+/// should be velocity-aware (only smooth slow motion).
+/// </para>
+///
+/// <para>
+/// <b>Why brushes are cached per visual</b>: <c>CreateColorBrush</c>
+/// crosses the WinRT boundary and allocates a new GPU resource. Doing it
+/// every frame on every layer (180/s at 60 Hz × 3 layers) burned visible
+/// budget. Each <see cref="SpriteVisual"/> now keeps one brush whose
+/// <see cref="CompositionColorBrush.Color"/> is mutated in place — zero
+/// allocations on the steady-state path.
 /// </para>
 /// </summary>
-internal sealed class CompositionRenderer(Compositor compositor, ContainerVisual root)
+internal sealed class CompositionRenderer
 {
-    /// <summary>
-    /// Cursor-follow easing duration. Was 120 ms — user feedback 2026-05-11
-    /// reported the smoothing was beautiful but the lag against fast cursor
-    /// motion was unbearable. 35 ms keeps the visual easing on micro-jitter
-    /// (sub-frame mouse polling noise) while staying under one human-perceptible
-    /// frame at 60 Hz, so the overlay reads as "stuck to the cursor."
-    /// </summary>
-    private static readonly TimeSpan AnimationDuration = TimeSpan.FromMilliseconds(35);
+    private readonly Compositor _compositor;
+    private readonly ContainerVisual _root;
+    private readonly List<PooledVisual> _pool = new(capacity: 4);
 
-    private readonly Compositor _compositor = compositor;
-    private readonly ContainerVisual _root = root;
-    private readonly ImplicitAnimationCollection _implicitAnimations = BuildImplicitAnimations(compositor);
-    private readonly List<SpriteVisual> _pool = new(capacity: 4);
+    public CompositionRenderer(Compositor compositor, ContainerVisual root)
+    {
+        _compositor = compositor;
+        _root = root;
+    }
 
     public void Apply(OverlayFrame frame)
     {
@@ -44,16 +59,17 @@ internal sealed class CompositionRenderer(Compositor compositor, ContainerVisual
 
         while (_pool.Count < n)
         {
-            var v = _compositor.CreateSpriteVisual();
-            v.ImplicitAnimations = _implicitAnimations;
-            _root.Children.InsertAtTop(v);
-            _pool.Add(v);
+            var visual = _compositor.CreateSpriteVisual();
+            var brush = _compositor.CreateColorBrush();
+            visual.Brush = brush;
+            _root.Children.InsertAtTop(visual);
+            _pool.Add(new PooledVisual(visual, brush));
         }
 
         while (_pool.Count > n)
         {
             var idx = _pool.Count - 1;
-            _root.Children.Remove(_pool[idx]);
+            _root.Children.Remove(_pool[idx].Visual);
             _pool.RemoveAt(idx);
         }
 
@@ -63,33 +79,18 @@ internal sealed class CompositionRenderer(Compositor compositor, ContainerVisual
         }
     }
 
-    private void UpdateVisual(SpriteVisual visual, Layer layer)
+    private static void UpdateVisual(PooledVisual pooled, Layer layer)
     {
         var (rect, color) = Translate(layer);
-        // Setting Offset/Size triggers the implicit animations on those
-        // properties — the compositor thread interpolates from current to
-        // target over AnimationDuration, decoupled from the UI tick.
-        visual.Offset = new Vector3(rect.X, rect.Y, 0);
-        visual.Size = new Vector2(rect.Width, rect.Height);
-        visual.Brush = _compositor.CreateColorBrush(color);
-    }
-
-    private static ImplicitAnimationCollection BuildImplicitAnimations(Compositor compositor)
-    {
-        var offsetAnim = compositor.CreateVector3KeyFrameAnimation();
-        offsetAnim.InsertExpressionKeyFrame(1.0f, "this.FinalValue");
-        offsetAnim.Duration = AnimationDuration;
-        offsetAnim.Target = nameof(SpriteVisual.Offset);
-
-        var sizeAnim = compositor.CreateVector2KeyFrameAnimation();
-        sizeAnim.InsertExpressionKeyFrame(1.0f, "this.FinalValue");
-        sizeAnim.Duration = AnimationDuration;
-        sizeAnim.Target = nameof(SpriteVisual.Size);
-
-        var collection = compositor.CreateImplicitAnimationCollection();
-        collection[nameof(SpriteVisual.Offset)] = offsetAnim;
-        collection[nameof(SpriteVisual.Size)] = sizeAnim;
-        return collection;
+        // Direct snap — no implicit animation. The cursor poll IS the
+        // refresh tick; the rendered position should match it 1:1.
+        pooled.Visual.Offset = new Vector3(rect.X, rect.Y, 0);
+        pooled.Visual.Size = new Vector2(rect.Width, rect.Height);
+        // Recolour the existing brush in place — zero alloc on steady state.
+        if (pooled.Brush.Color != color)
+        {
+            pooled.Brush.Color = color;
+        }
     }
 
     private static ((float X, float Y, float Width, float Height) Rect, Color Color) Translate(Layer layer)
@@ -113,4 +114,7 @@ internal sealed class CompositionRenderer(Compositor compositor, ContainerVisual
 
         return (rect, color);
     }
+
+    /// <summary>One reusable visual + its in-place mutable colour brush.</summary>
+    private readonly record struct PooledVisual(SpriteVisual Visual, CompositionColorBrush Brush);
 }

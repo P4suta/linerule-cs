@@ -248,7 +248,15 @@ public static class WindowsApp
             _cursor = cursor;
             _queue = queue;
             _timer = queue.CreateTimer();
-            _timer.Interval = TimeSpan.FromMilliseconds(16);
+            // 8 ms ≈ 125 Hz cursor poll. 60 Hz (16 ms) was visibly choppy
+            // on high-refresh monitors — overlay updated once per ~2-4
+            // display frames depending on monitor (60 / 144 / 240 Hz).
+            // 125 Hz keeps us under one display frame on everything up to
+            // 120 Hz monitors and gets tantalizingly close on 144 Hz.
+            // Native CPU cost: a single GetCursorPos + (when moved) one
+            // pure-function Render.Frame call + 3 Composition property
+            // assignments → well under 100 µs per tick.
+            _timer.Interval = TimeSpan.FromMilliseconds(8);
             _timer.Tick += OnTick;
         }
 
