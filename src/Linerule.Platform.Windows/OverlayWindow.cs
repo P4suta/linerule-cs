@@ -194,6 +194,13 @@ public sealed class OverlayWindow : IOverlaySurface
         compLog.Info("Microsoft.UI.Composition.Compositor created");
 
         var root = compositor.CreateContainerVisual();
+        // RelativeSizeAdjustment(1, 1) makes the root fill its parent (the island).
+        // Without this, the root visual has zero size — `ContentIsland.Create`
+        // accepts it but `bridge.Connect(island)` then wedges in native code
+        // on a zero-size composition target. Cf. WindowsAppSDK-Samples
+        // Islands/UXFrameworksOnIslands/LiftedFrame.cpp (the canonical
+        // ContentIsland.Create wiring).
+        root.RelativeSizeAdjustment = new System.Numerics.Vector2(1.0f, 1.0f);
         var island = ContentIsland.Create(root);
         compLog.Info("ContentIsland.Create ok");
 
