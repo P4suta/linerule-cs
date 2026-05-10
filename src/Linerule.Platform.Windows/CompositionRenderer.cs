@@ -24,8 +24,14 @@ namespace Linerule.Platform.Windows;
 /// </summary>
 internal sealed class CompositionRenderer(Compositor compositor, ContainerVisual root)
 {
-    /// <summary>Animation duration for cursor-follow easing.</summary>
-    private static readonly TimeSpan AnimationDuration = TimeSpan.FromMilliseconds(120);
+    /// <summary>
+    /// Cursor-follow easing duration. Was 120 ms — user feedback 2026-05-11
+    /// reported the smoothing was beautiful but the lag against fast cursor
+    /// motion was unbearable. 35 ms keeps the visual easing on micro-jitter
+    /// (sub-frame mouse polling noise) while staying under one human-perceptible
+    /// frame at 60 Hz, so the overlay reads as "stuck to the cursor."
+    /// </summary>
+    private static readonly TimeSpan AnimationDuration = TimeSpan.FromMilliseconds(35);
 
     private readonly Compositor _compositor = compositor;
     private readonly ContainerVisual _root = root;

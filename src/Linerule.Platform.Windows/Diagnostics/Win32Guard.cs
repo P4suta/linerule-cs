@@ -190,7 +190,8 @@ internal static class Win32Guard
         string operation,
         LoggerHandle log,
         [CallerMemberName] string? caller = null,
-        [CallerLineNumber] int line = 0)
+        [CallerLineNumber] int line = 0
+    )
     {
         var err = Marshal.GetLastWin32Error();
         if (err == 0)
@@ -202,7 +203,8 @@ internal static class Win32Guard
             new LogField("op", operation),
             new LogField("err", err),
             new LogField("err_name", DecodeName(err)),
-            new LogField("caller", FormatCaller(caller, line)));
+            new LogField("caller", FormatCaller(caller, line))
+        );
     }
 
     /// <summary>

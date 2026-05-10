@@ -18,8 +18,30 @@
     <EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
     <EnableNETAnalyzers>true</EnableNETAnalyzers>
     <CodeAnalysisTreatWarningsAsErrors>true</CodeAnalysisTreatWarningsAsErrors>
-    <RunAnalyzersDuringBuild>true</RunAnalyzersDuringBuild>
     <NoWarn></NoWarn>
+
+    <!--
+      Analyzer cost (NetAnalyzers + Meziantou + Roslynator + Sonar with
+      AnalysisMode=All) dominates the inner Debug iteration. Skip them in
+      Debug-non-CI builds — `just lint` and `just ci` keep them on, so
+      regressions still get caught. Override per-recipe with
+      `/p:RunAnalyzersDuringBuild=true`.
+    -->
+    <RunAnalyzersDuringBuild Condition="'$(Configuration)' == 'Debug' AND '$(CI)' != 'true'"
+      >false</RunAnalyzersDuringBuild
+    >
+    <RunAnalyzersDuringBuild Condition="'$(Configuration)' != 'Debug' OR '$(CI)' == 'true'"
+      >true</RunAnalyzersDuringBuild
+    >
+
+    <!--
+      MSBuild server (preview-stable since .NET 8) keeps the worker alive
+      across invocations, saving ~200-500 ms per Debug iteration.
+      UseSharedCompilation reuses the Roslyn compiler process across projects.
+      Opt out with MSBUILDDISABLENODEREUSE=1 / UseSharedCompilation=false.
+    -->
+    <UseSharedCompilation>true</UseSharedCompilation>
+    <BuildInParallel>true</BuildInParallel>
 
     <IsAotCompatible>true</IsAotCompatible>
     <InvariantGlobalization>true</InvariantGlobalization>

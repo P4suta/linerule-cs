@@ -113,40 +113,62 @@ public static class WindowsApp
         TickLoop loop,
         HotkeyHost hotkeys,
         OverlayWindow overlay,
-        DispatcherQueueController controller)
+        DispatcherQueueController controller
+    )
     {
-        Log.Debug("shutdown: stop tick loop");
-        try { loop.Stop(); }
-        catch (Exception ex) { Log.Warn("shutdown: tick stop threw", new LogField("ex", ex.GetType().Name), new LogField("msg", ex.Message)); }
+        await ShutdownStep(
+                "stop tick loop",
+                () =>
+                {
+                    loop.Stop();
+                    return Task.CompletedTask;
+                }
+            )
+            .ConfigureAwait(false);
+        await ShutdownStep("dispose hotkeys", () => hotkeys.DisposeAsync().AsTask()).ConfigureAwait(false);
+        await ShutdownStep("dispose overlay", () => overlay.DisposeAsync().AsTask()).ConfigureAwait(false);
+        await ShutdownStep("ShutdownQueueAsync", () => controller.ShutdownQueueAsync().AsTask()).ConfigureAwait(false);
+        Log.Info("shutdown: complete");
 
-        Log.Debug("shutdown: dispose hotkeys");
-        try { await hotkeys.DisposeAsync().ConfigureAwait(false); }
-        catch (Exception ex) { Log.Warn("shutdown: hotkeys dispose threw", new LogField("ex", ex.GetType().Name), new LogField("msg", ex.Message)); }
-
-        Log.Debug("shutdown: dispose overlay");
-        try { await overlay.DisposeAsync().ConfigureAwait(false); }
-        catch (Exception ex) { Log.Warn("shutdown: overlay dispose threw", new LogField("ex", ex.GetType().Name), new LogField("msg", ex.Message)); }
-
-        Log.Debug("shutdown: ShutdownQueueAsync begin");
+        // Force-flush stdout/stderr/JSONL — the parent shell otherwise
+        // sometimes doesn't see the final newlines and the prompt looks
+        // hung even though the process has exited.
         try
         {
-            await controller.ShutdownQueueAsync();
-            Log.Info("shutdown: complete");
+            Console.Out.Flush();
+        }
+        catch (IOException)
+        { /* ignore */
+        }
+        try
+        {
+            Console.Error.Flush();
+        }
+        catch (IOException)
+        { /* ignore */
+        }
+        Logger.Shutdown();
+    }
+
+    /// <summary>
+    /// One step of the ordered teardown — logs the step, runs it, and
+    /// catches/logs any throw so a stuck disposer doesn't block later steps.
+    /// </summary>
+    private static async Task ShutdownStep(string label, Func<Task> action)
+    {
+        Log.Debug($"shutdown: {label}");
+        try
+        {
+            await action().ConfigureAwait(false);
         }
         catch (Exception ex)
         {
-            Log.Warn("shutdown: ShutdownQueueAsync threw",
+            Log.Warn(
+                $"shutdown: {label} threw",
                 new LogField("ex", ex.GetType().Name),
-                new LogField("msg", ex.Message));
+                new LogField("msg", ex.Message)
+            );
         }
-
-        // Force-flush stdout/stderr/JSONL — the previous run hit a case
-        // where the process appeared to hang because the parent shell didn't
-        // see the final newlines. Flush before returning so the parent prompt
-        // returns immediately on process exit.
-        try { Console.Out.Flush(); } catch (IOException) { /* ignore */ }
-        try { Console.Error.Flush(); } catch (IOException) { /* ignore */ }
-        Logger.Shutdown();
     }
 
     private static void RegisterAll(HotkeyHost host, HotkeyMap map)
@@ -179,12 +201,24 @@ public static class WindowsApp
 
     private static IEnumerable<(string Chord, OverlayAction Action)> BuildBindings(HotkeyMap map)
     {
+        // Step sizes: were +4 each. User feedback 2026-05-11 — "spamming the
+        // hotkey to reach max is exhausting." Scaled up to ≈4-8 presses to
+        // span the full range:
+        //   thickness: 1..512 logical px → step 16 (≈32 presses full sweep,
+        //              ~6 from default 28 to 128)
+        //   opacity:   1..255 alpha       → step 24 (≈11 presses full sweep,
+        //              ~4 from default 0xAA=170 to max 0xFF=255)
+        // Long-press auto-repeat is the proper fix; bigger discrete steps
+        // tide us over until that lands.
+        const int ThicknessStep = 16;
+        const int OpacityStep = 24;
+
         yield return (map.CycleMode, OverlayAction.CycleMode.Instance);
         yield return (map.ToggleVisible, OverlayAction.ToggleVisible.Instance);
-        yield return (map.Thicker, new OverlayAction.BumpThickness(+4));
-        yield return (map.Thinner, new OverlayAction.BumpThickness(-4));
-        yield return (map.MoreOpaque, new OverlayAction.BumpOpacity(+4));
-        yield return (map.LessOpaque, new OverlayAction.BumpOpacity(-4));
+        yield return (map.Thicker, new OverlayAction.BumpThickness(+ThicknessStep));
+        yield return (map.Thinner, new OverlayAction.BumpThickness(-ThicknessStep));
+        yield return (map.MoreOpaque, new OverlayAction.BumpOpacity(+OpacityStep));
+        yield return (map.LessOpaque, new OverlayAction.BumpOpacity(-OpacityStep));
         yield return (map.Quit, OverlayAction.Quit.Instance);
     }
 
