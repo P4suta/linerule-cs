@@ -61,6 +61,13 @@ public static class WindowsApp
         Log.Info("DispatcherQueue created");
 
         var monitor = MonitorInfo.PrimaryBounds();
+        // Both OverlayWindow.DisposeAsync and HotkeyHost.DisposeAsync are
+        // idempotent (guarded by `_disposed`), so it is safe for the
+        // explicit ShutdownAsync below to dispose them BEFORE the implicit
+        // `await using` does so at scope end. We need the ordered shutdown
+        // to drain the dispatcher queue properly, but we keep `await using`
+        // so the analyzer's CA2000 (and the runtime invariant) still hold
+        // on every code path — including `OverlayWindow.Create` throwing.
         await using var overlay = OverlayWindow.Create(monitor, queue);
         await using var hotkeys = HotkeyHost.Create();
         Log.Info("HotkeyHost created");
@@ -85,9 +92,61 @@ public static class WindowsApp
         Log.Info("entering run loop");
         queue.RunEventLoop();
         Log.Info("run loop exited");
-        loop.Stop();
-        await controller.ShutdownQueueAsync();
+
+        await ShutdownAsync(loop, hotkeys, overlay, controller).ConfigureAwait(false);
         return 0;
+    }
+
+    /// <summary>
+    /// Explicit teardown sequence with per-step logging. Order matters:
+    /// <list type="number">
+    ///   <item>Stop tick timer (no more state mutations / repaints)</item>
+    ///   <item>Dispose hotkey host (unregister chords + destroy hidden HWND)</item>
+    ///   <item>Dispose overlay (release bridge / island / compositor / HWND)</item>
+    ///   <item><c>ShutdownQueueAsync</c> drains pending WinRT continuations;
+    ///         after this the queue is dead.</item>
+    /// </list>
+    /// Wrapping each step in its own try/catch so a stuck disposer doesn't
+    /// prevent later steps from running.
+    /// </summary>
+    private static async Task ShutdownAsync(
+        TickLoop loop,
+        HotkeyHost hotkeys,
+        OverlayWindow overlay,
+        DispatcherQueueController controller)
+    {
+        Log.Debug("shutdown: stop tick loop");
+        try { loop.Stop(); }
+        catch (Exception ex) { Log.Warn("shutdown: tick stop threw", new LogField("ex", ex.GetType().Name), new LogField("msg", ex.Message)); }
+
+        Log.Debug("shutdown: dispose hotkeys");
+        try { await hotkeys.DisposeAsync().ConfigureAwait(false); }
+        catch (Exception ex) { Log.Warn("shutdown: hotkeys dispose threw", new LogField("ex", ex.GetType().Name), new LogField("msg", ex.Message)); }
+
+        Log.Debug("shutdown: dispose overlay");
+        try { await overlay.DisposeAsync().ConfigureAwait(false); }
+        catch (Exception ex) { Log.Warn("shutdown: overlay dispose threw", new LogField("ex", ex.GetType().Name), new LogField("msg", ex.Message)); }
+
+        Log.Debug("shutdown: ShutdownQueueAsync begin");
+        try
+        {
+            await controller.ShutdownQueueAsync();
+            Log.Info("shutdown: complete");
+        }
+        catch (Exception ex)
+        {
+            Log.Warn("shutdown: ShutdownQueueAsync threw",
+                new LogField("ex", ex.GetType().Name),
+                new LogField("msg", ex.Message));
+        }
+
+        // Force-flush stdout/stderr/JSONL — the previous run hit a case
+        // where the process appeared to hang because the parent shell didn't
+        // see the final newlines. Flush before returning so the parent prompt
+        // returns immediately on process exit.
+        try { Console.Out.Flush(); } catch (IOException) { /* ignore */ }
+        try { Console.Error.Flush(); } catch (IOException) { /* ignore */ }
+        Logger.Shutdown();
     }
 
     private static void RegisterAll(HotkeyHost host, HotkeyMap map)

@@ -63,7 +63,7 @@ public static class CrashDump
         _log.Info(
             "installed",
             new LogField("dump_dir", Path.GetTempPath()),
-            new LogField("ring_capacity", Logger.RecentEntries().Count)
+            new LogField("ring_capacity", Logger.RingCapacity)
         );
     }
 

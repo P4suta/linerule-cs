@@ -47,11 +47,11 @@ internal static class ExStyleSnapshot
         _enumChildCount = 0;
         _enumLabel = label;
         _enumLog = log;
-        Win32Guard.Check(
-            PInvoke.EnumChildWindows(hwnd, EnumChildCallback, default),
-            $"EnumChildWindows ({label})",
-            log
-        );
+        // EnumChildWindows BOOL return is documented as "not used" — it
+        // returns FALSE when the callback stops enumeration or there are
+        // no children. Real failures show in GetLastError.
+        _ = PInvoke.EnumChildWindows(hwnd, EnumChildCallback, default);
+        Win32Guard.CheckLastError($"EnumChildWindows ({label})", log);
         if (_enumChildCount == 0)
         {
             log.Debug($"child HWNDs ({label})", new LogField("count", 0));

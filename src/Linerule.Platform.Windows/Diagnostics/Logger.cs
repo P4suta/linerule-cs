@@ -150,6 +150,12 @@ public static class Logger
     public static IReadOnlyList<LogEntry> RecentEntries() => _ringBuffer?.Snapshot() ?? [];
 
     /// <summary>
+    /// Configured capacity of the crash-dump ring buffer (NOT the
+    /// current entry count). 0 if the logger isn't initialized.
+    /// </summary>
+    public static int RingCapacity => _ringBuffer?.Capacity ?? 0;
+
+    /// <summary>
     /// Push a session-scoped context (e.g. one overlay session). Returns
     /// an <see cref="IDisposable"/> that pops the scope when disposed —
     /// nest with <see langword="using"/>.

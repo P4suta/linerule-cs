@@ -174,6 +174,38 @@ internal static class Win32Guard
         string.Create(CultureInfo.InvariantCulture, $"{caller ?? "?"}:{line}");
 
     /// <summary>
+    /// "BOOL is informational, not a success flag" check. Call this after
+    /// APIs whose return value is documented as something other than
+    /// success/failure (<c>ShowWindow</c> returns the previous show state;
+    /// <c>EnumChildWindows</c> returns FALSE when the callback stops
+    /// enumeration or there are no children — neither is an error).
+    ///
+    /// <para>
+    /// Logs a warning ONLY when <c>GetLastError</c> is non-zero, so the
+    /// noise of "BOOL false but everything is fine" doesn't pollute the
+    /// log stream.
+    /// </para>
+    /// </summary>
+    public static void CheckLastError(
+        string operation,
+        LoggerHandle log,
+        [CallerMemberName] string? caller = null,
+        [CallerLineNumber] int line = 0)
+    {
+        var err = Marshal.GetLastWin32Error();
+        if (err == 0)
+        {
+            return;
+        }
+        log.Warn(
+            "win32 last-error set",
+            new LogField("op", operation),
+            new LogField("err", err),
+            new LogField("err_name", DecodeName(err)),
+            new LogField("caller", FormatCaller(caller, line)));
+    }
+
+    /// <summary>
     /// Decode the most common Win32 error codes to their symbolic name.
     /// For unknown codes, returns the OS-localized message via
     /// <see cref="Marshal.GetPInvokeErrorMessage(int)"/>, prefixed with

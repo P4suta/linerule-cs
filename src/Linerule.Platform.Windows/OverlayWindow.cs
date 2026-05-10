@@ -90,11 +90,10 @@ public sealed class OverlayWindow : IOverlaySurface
         var (compositor, bridge, island, root) = AttachBridgeAndIsland(hwnd, queue);
         ExStyleSnapshot.Capture(hwnd, "after bridge.Connect", Log);
 
-        Win32Guard.Check(
-            PInvoke.ShowWindow(hwnd, SHOW_WINDOW_CMD.SW_SHOWNOACTIVATE),
-            "ShowWindow(SW_SHOWNOACTIVATE)",
-            Log
-        );
+        // ShowWindow's BOOL return is the previous show state, not a success
+        // flag — go through CheckLastError so we only warn on a real fault.
+        _ = PInvoke.ShowWindow(hwnd, SHOW_WINDOW_CMD.SW_SHOWNOACTIVATE);
+        Win32Guard.CheckLastError("ShowWindow(SW_SHOWNOACTIVATE)", Log);
         Log.Info("ShowWindow ok — overlay live");
         ExStyleSnapshot.Capture(hwnd, "after ShowWindow", Log);
 
