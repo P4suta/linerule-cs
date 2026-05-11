@@ -96,11 +96,13 @@ jobs:
       - run: dotnet build -c Release --no-restore --nologo
       - run: dotnet test -c Release --no-build --nologo
 
-      - name: Publish (single-file, win-x64)
+      - name: Publish (self-contained, win-x64)
+        # Mirrors `just publish`: plain self-contained, multi-file. PublishSingleFile
+        # errors out on WindowsAppSDK 2.x without EnableMsixTooling, and PublishTrimmed
+        # is held back until ADR-0010 (AOT canary) lands.
         run: |
           dotnet publish src/Linerule.Cli -c Release -r win-x64 `
-            /p:PublishSingleFile=true /p:SelfContained=true `
-            /p:PublishTrimmed=true `
+            /p:SelfContained=true `
             -o artifacts/publish
 
       - name: Upload binary artifact
