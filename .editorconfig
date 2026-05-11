@@ -68,37 +68,17 @@ dotnet_diagnostic.CA1851.severity = error  # multiple enumerations
 dotnet_diagnostic.CA2208.severity = error  # ArgumentException correctly
 dotnet_diagnostic.CA1801.severity = error  # unused parameters
 
-# === Architecturally justified relaxations (rule is legitimately stale for our design) ===
-# Every relaxation below is documented in an ADR. Code-level fixes are preferred;
-# only rules that directly contradict the design intent end up here
-# (memory: feedback_honest_analyzer_fix).
+# === Architecturally justified relaxations ===
 
-# CA1034: "Do not nest type". The C# 13 closed-DU idiom (abstract record root +
-# `private protected` ctor + nested sealed records) is the *only* way to express
-# a closed sum type in C# until union types ship. The rule predates this idiom.
-# See docs/adr/0002-state-model.md.
+# CA1034: closed-DU nested-type idiom; see ADR-0002.
 dotnet_diagnostic.CA1034.severity = none
 
-# S3060 (Sonar): "Offload code conditional on type test to subclass and remove
-# the condition." Contradicts the closed-DU `Match` / `switch`-expression
-# pattern, where the centralized type test is the *whole point* of an ADT.
-# Distributing the logic via virtual methods is exactly what FP languages spent
-# decades trying to escape from. See docs/adr/0002-state-model.md.
+# S3060: closed-DU match pattern; see ADR-0002.
 dotnet_diagnostic.S3060.severity = none
 
 # === Disable noisy rules in test projects only (configured via per-folder .editorconfig later if needed) ===
 
 # === Naming ===
-#
-# Three rules, in order of specificity (Roslyn applies the most specific
-# match — `required_modifiers` is the discriminator):
-#
-#   1. const fields                 → any case (Win32 interop constants
-#                                     stay SCREAMING_SNAKE to match MS docs;
-#                                     domain const may stay PascalCase)
-#   2. static readonly fields       → PascalCase (modern .NET convention)
-#   3. private instance fields      → _camelCase (Roslyn convention)
-#
 dotnet_naming_rule.types_should_be_pascal_case.severity = warning
 dotnet_naming_rule.types_should_be_pascal_case.symbols = types
 dotnet_naming_rule.types_should_be_pascal_case.style = pascal_case_style

@@ -1,9 +1,9 @@
 # linerule-cs CI.
 #
 # Policy:
-#   - No `on: schedule` (memory: feedback_no_cron_in_repos). Dependabot is the only scheduled job.
-#   - Every action is SHA-pinned (memory: feedback_prefer_latest_not_pinning); Dependabot bumps weekly.
-#   - Coverage is reported, not gated at 100% (memory: feedback_coverage_is_indicator_not_target).
+#   - No `on: schedule`. Dependabot is the only scheduled job.
+#   - Every action is SHA-pinned; Dependabot bumps weekly.
+#   - Coverage is reported, not gated at 100%.
 #   - Cross-platform jobs run on ubuntu-latest; Windows-runtime jobs on windows-latest.
 
 name: ci
@@ -23,7 +23,6 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # ─── Build & test on Linux (cross-platform domain) ───
   build-test-linux:
     name: build + test (linux)
     runs-on: ubuntu-latest
@@ -76,7 +75,6 @@ jobs:
           recreate: true
           path: code-coverage-results.md
 
-  # ─── Build & test on Windows (full stack inc. WinAppSDK runtime) ───
   build-test-windows:
     name: build + test (windows)
     runs-on: windows-latest
@@ -111,7 +109,6 @@ jobs:
           name: linerule-win-x64
           path: artifacts/publish/
 
-  # ─── AOT canary (allowed to fail; tracks WinAppSDK + AOT regressions) ───
   aot-canary:
     name: aot canary (windows)
     runs-on: windows-latest
@@ -124,7 +121,6 @@ jobs:
           global-json-file: global.json
       - run: dotnet publish src/Linerule.Cli -c Release -r win-x64 /p:PublishAot=true -o artifacts/aot
 
-  # ─── Formatters & static analysis ───
   format:
     name: format (csharpier + dotnet format)
     runs-on: ubuntu-latest
@@ -171,7 +167,6 @@ jobs:
             | tar xz -C /tmp actionlint
           /tmp/actionlint -color
 
-  # ─── Vulnerable / deprecated package scan ───
   vuln-check:
     name: vulnerable + deprecated packages
     runs-on: ubuntu-latest
@@ -194,7 +189,6 @@ jobs:
       - name: dotnet list package --deprecated
         run: dotnet list package --deprecated --include-transitive
 
-  # ─── Dependency review on PR diffs ───
   dependency-review:
     name: dependency review
     if: github.event_name == 'pull_request'
@@ -207,7 +201,6 @@ jobs:
           fail-on-severity: high
           comment-summary-in-pr: true
 
-  # ─── Conventional commits enforcement (PR title) ───
   conventional-commits:
     name: conventional commits
     if: github.event_name == 'pull_request'

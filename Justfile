@@ -1,55 +1,14 @@
-# linerule-cs — task entry points.
-#
-# Default: every recipe routes through the dev container
-# (`docker compose run --rm dev …`) so the host needs only Docker.
-# When INSIDE_CONTAINER=1 (set by Dockerfile), recipes run native — no nesting.
-#
-# ADR-0005 documents that the Windows-host build of Linerule.Platform.Windows /
-# Linerule.Cli is the only step that *runtime*-requires Windows; the build
-# itself is expected to succeed in this Linux container too.
-#
-# ----- Build configurations -----
-#
-# Debug is the default (matches dotnet's own default + standard .NET dev flow):
-# faster incremental compile, full PDB, DEBUG symbol, no optimizations,
-# LINERULE_LOG=*=Debug (verbose) wired in.
-#
-# Release is what `just publish` produces: optimized, trimmed PDB,
-# LINERULE_LOG=*=Info default (matches the Logger fallback).
-#
-# Recipes accept an optional `*config` param so you can opt into either
-# from any recipe: `just build`, `just build Release`, `just test Debug`,
-# `just publish` (always Release — release-only by intent).
-#
-# ----- Build output -----
-#
-# Every dotnet invocation passes:
-#   --nologo                  — drop the .NET banner
-#   -tl:on                    — Terminal Logger (.NET 9+) groups errors per project
-#   -clp:Summary;ErrorsOnly  — fallback console logger only emits errors + summary
-#
-# Override with env: `JUST_DOTNET_V=normal` (verbosity), `JUST_DOTNET_TL=off`.
+# linerule-cs — task entry points. Routes through Docker unless INSIDE_CONTAINER=1.
 
 inside := env_var_or_default("INSIDE_CONTAINER", "0")
 
-# Detect whether the dev container is already up — if so, recipes route
-# through `docker compose exec` (no per-command container spin-up, ≈1.5s
-# saved per call). `just dev-up` to start it; `just dev-down` to stop.
-# Empty string when the container isn't running.
 dev_running := `docker compose ps --status running --services 2>/dev/null | grep -c '^dev$' 2>/dev/null || true`
-
-# Cold = `run --rm` (creates throwaway container), warm = `exec` (reuses
-# the long-lived one started by `just dev-up`).
 docker_run := if dev_running == "0" { "docker compose run --rm dev" } else { "docker compose exec dev" }
 
 dotnet_v := env_var_or_default("JUST_DOTNET_V", "minimal")
 dotnet_tl := env_var_or_default("JUST_DOTNET_TL", "on")
-# -clp:'Summary;ErrorsOnly' must be single-quoted — `;` is a shell command
-# separator and would otherwise break out of the dotnet invocation.
 dotnet_flags := "--nologo -v " + dotnet_v + " -tl:" + dotnet_tl + " -clp:'Summary;ErrorsOnly'"
 
-# Verbose log spec for dev recipes (Debug + Trace for high-frequency systems
-# off by default — flip subsystems explicitly when chasing a bug).
 dev_log := env_var_or_default("LINERULE_LOG", "*=Debug,WndProc=Info,Heartbeat=Info,CursorTracker=Info")
 
 dotnet := if inside == "1" { "dotnet" } else { docker_run + " dotnet" }
@@ -93,18 +52,12 @@ dev-down:
 restore:
     {{dotnet}} restore --nologo -v {{dotnet_v}}
 
-# Build (Debug by default — fast incremental, full PDB).
-# Add `--no-restore` automatically when restore is up to date — `just b`
-# is the inner-loop alias that skips restore unconditionally.
 build *config="Debug":
     {{dotnet}} build -c {{config}} {{dotnet_flags}}
 
 build-release: (build "Release")
 
-# Inner-loop build alias: skips NuGet restore + analyzers (Debug already
-# disables analyzers per Directory.Build.props). Use after at least one
-# `just build` or `just restore` has populated obj/. Wall time on a warm
-# `just dev-up` container: ~2-3 s.
+# Inner-loop alias: skips restore + analyzers (Debug already disables them).
 b *config="Debug":
     {{dotnet}} build -c {{config}} --no-restore {{dotnet_flags}}
 
@@ -130,7 +83,7 @@ t *config="Debug":
 
 test-release: (test "Release")
 
-# Branch coverage report (advisory floor — ADR-0008 + memory feedback_coverage_is_indicator_not_target).
+# Branch coverage report (advisory; see ADR-0008).
 coverage:
     {{dotnet}} test -c Release {{dotnet_flags}} \
         /p:CollectCoverage=true \
@@ -202,6 +155,17 @@ publish:
     {{dotnet}} publish src/Linerule.Cli -c Release -r win-x64 {{dotnet_flags}} \
         /p:SelfContained=true \
         -o artifacts/publish
+
+# Distribution-shaped Release build — the WinExe GUI launcher (Linerule.App).
+# Produces artifacts/publish-dist/Linerule.exe (capital L, distinct from the
+# CLI's linerule.exe). PE subsystem = Windows GUI, so Explorer double-click
+# goes straight to the overlay with no flashing console window. Same multi-dll
+# layout as `publish` — ship the whole artifacts/publish-dist/ directory.
+# Diagnostics still land in %APPDATA%\linerule\events.sqlite (ADR-0012).
+publish-dist:
+    {{dotnet}} publish src/Linerule.App -c Release -r win-x64 {{dotnet_flags}} \
+        /p:SelfContained=true \
+        -o artifacts/publish-dist
 
 # Self-contained Debug build with full PDB (for `dotnet-dump`, `WinDbg`,
 # `dotnet-trace` attach scenarios — keep symbols, keep optimizations off).

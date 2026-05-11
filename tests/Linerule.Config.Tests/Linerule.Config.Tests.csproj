@@ -4,11 +4,7 @@
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
     <RootNamespace>Linerule.Config.Tests</RootNamespace>
-    <!--
-      Test code legitimately exercises Tomlyn's reflection-based deserialize
-      (ConfigLoader.ParseString is marked [RequiresUnreferencedCode]). Tests
-      never get AOT-published, so opt this assembly out of trim/AOT analysis.
-    -->
+    <!-- Tests use [RequiresUnreferencedCode]; never AOT-published. -->
     <IsAotCompatible>false</IsAotCompatible>
   </PropertyGroup>
 

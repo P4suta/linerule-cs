@@ -1,10 +1,4 @@
 <Project>
-  <!--
-    Central Package Management. Versions verified live on 2026-05-10.
-    Update via Dependabot weekly bumps; do not pin from memory
-    (memory: feedback_verify_latest_versions).
-  -->
-
   <PropertyGroup>
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
     <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
@@ -14,25 +8,13 @@
     <PackageVersion Include="Microsoft.WindowsAppSDK" Version="2.0.1" />
     <PackageVersion Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.28000.1839" />
     <PackageVersion Include="Microsoft.Windows.CsWin32" Version="0.3.275" />
-    <!-- Direct2D + DirectWrite + Direct3D11 + DXGI は Microsoft.Windows.CsWin32
-         が NativeMethods.txt から source-gen する。HUD は
-         ICompositionDrawingSurfaceInterop.BeginDraw(IID_ID2D1DeviceContext)
-         経由で D2D を Composition surface に描画する — ADR-0009 v3 参照。
-         third-party binding (Vortice / SharpDX 等) は不使用。Microsoft.Graphics.Win2D
-         は Windows.UI.Composition と非互換のため drop した。 -->
+    <!-- CsWin32 source-generates Direct2D/DirectWrite/DXGI; no third-party bindings. -->
   </ItemGroup>
 
   <ItemGroup Label="App">
     <PackageVersion Include="System.CommandLine" Version="2.0.7" />
     <PackageVersion Include="Spectre.Console" Version="0.55.2" />
     <PackageVersion Include="Tomlyn" Version="2.3.2" />
-    <!--
-      Microsoft.Data.Sqlite tracks the .NET runtime release cadence; 10.0.7
-      is the latest 10.x stable as of 2026-04-21 (matches global.json's net10
-      SDK band). Backend is SQLitePCLRaw with the bundled `e_sqlite3` native
-      asset — reflection-free at the layer we use (no EF Core), so the AOT
-      analyzer stays happy. See PR 2 plan / ADR-0012.
-    -->
     <PackageVersion Include="Microsoft.Data.Sqlite" Version="10.0.7" />
   </ItemGroup>
 

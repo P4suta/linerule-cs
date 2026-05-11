@@ -1,11 +1,4 @@
 <Project>
-  <!--
-    linerule-cs / single source of truth for build + analyzer config.
-    Per-project NoWarn, SuppressMessage, and #pragma warning disable are
-    forbidden (xtask strict-code grep enforces this). Fix root causes.
-    See docs/adr/0006-workspace-lints-single-source.md.
-  -->
-
   <PropertyGroup>
     <LangVersion>13</LangVersion>
     <Nullable>enable</Nullable>
@@ -20,13 +13,7 @@
     <CodeAnalysisTreatWarningsAsErrors>true</CodeAnalysisTreatWarningsAsErrors>
     <NoWarn></NoWarn>
 
-    <!--
-      Analyzer cost (NetAnalyzers + Meziantou + Roslynator + Sonar with
-      AnalysisMode=All) dominates the inner Debug iteration. Skip them in
-      Debug-non-CI builds — `just lint` and `just ci` keep them on, so
-      regressions still get caught. Override per-recipe with
-      `/p:RunAnalyzersDuringBuild=true`.
-    -->
+    <!-- Skip analyzers in Debug non-CI builds for faster iteration. -->
     <RunAnalyzersDuringBuild Condition="'$(Configuration)' == 'Debug' AND '$(CI)' != 'true'"
       >false</RunAnalyzersDuringBuild
     >
@@ -34,21 +21,10 @@
       >true</RunAnalyzersDuringBuild
     >
 
-    <!--
-      MSBuild server (preview-stable since .NET 8) keeps the worker alive
-      across invocations, saving ~200-500 ms per Debug iteration.
-      UseSharedCompilation reuses the Roslyn compiler process across projects.
-      Opt out with MSBUILDDISABLENODEREUSE=1 / UseSharedCompilation=false.
-    -->
     <UseSharedCompilation>true</UseSharedCompilation>
     <BuildInParallel>true</BuildInParallel>
 
-    <!--
-      Win2D 1.4 emits WIN2D0001 when it doesn't see an explicit Platform set.
-      Linerule.Platform.Windows pins x64 via PlatformTarget; consuming projects
-      inherit the runtime via the win-x64 RID at publish time. The warn doesn't
-      reflect a real misconfiguration, so silence it solution-wide.
-    -->
+    <!-- WIN2D0001: not a real misconfiguration when consuming WinAppSDK. -->
     <Win2DWarnNoPlatform>false</Win2DWarnNoPlatform>
 
     <IsAotCompatible>true</IsAotCompatible>
@@ -58,19 +34,10 @@
     <Deterministic>true</Deterministic>
     <ContinuousIntegrationBuild Condition="'$(CI)' == 'true'">true</ContinuousIntegrationBuild>
 
-    <!--
-      linerule-cs ships an executable, not a public NuGet library. XML doc files
-      add ritual cost without consumer value here, so we leave generation off;
-      this also silences CS1591 (missing XML comment). When a project starts
-      shipping a published API surface, override this per-project.
-    -->
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
   </PropertyGroup>
 
-  <!-- Cross-build Windows-targeted projects on Linux (Docker dev container).
-       Set unconditionally; MSBuild evaluates Directory.Build.props before the
-       csproj's TargetFramework, so a $(TargetFramework.Contains('-windows'))
-       condition would not match at this point. -->
+  <!-- Cross-build Windows-targeted projects on Linux. -->
   <PropertyGroup>
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
   </PropertyGroup>

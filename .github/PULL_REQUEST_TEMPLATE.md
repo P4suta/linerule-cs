@@ -8,9 +8,7 @@
 
 ## How was this verified?
 
-- [ ] `just lint` (csharpier + dotnet format + typos + actionlint + xtask strict-code)
-- [ ] `just test` (unit + property + snapshot)
-- [ ] `just ci` (full local replica)
+- [ ] `just ci` (lint + test + coverage)
 - [ ] Manual smoke (Windows): _which mode / hotkey / config edit?_
 
 ## Architecture beauty checklist
