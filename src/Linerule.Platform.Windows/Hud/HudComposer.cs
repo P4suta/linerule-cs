@@ -41,12 +41,12 @@ public static class HudComposer
 
     private static ImmutableArray<HudHotkeyRow> BuildHotkeys(HotkeyMap map) =>
         [
-            new HudHotkeyRow(map.CycleMode, "Cycle mode"),
-            new HudHotkeyRow(map.ToggleVisible, "Toggle visible"),
-            new HudHotkeyRow(map.Thicker, "Thicker"),
-            new HudHotkeyRow(map.Thinner, "Thinner"),
-            new HudHotkeyRow(map.MoreOpaque, "More opaque"),
-            new HudHotkeyRow(map.LessOpaque, "Less opaque"),
+            new HudHotkeyRow(map.CycleMode, "Cycle mode (hold to browse)"),
+            new HudHotkeyRow(map.ToggleVisible, "Hold to suppress"),
+            new HudHotkeyRow(map.Thicker, "Thicker (hold)"),
+            new HudHotkeyRow(map.Thinner, "Thinner (hold)"),
+            new HudHotkeyRow(map.MoreOpaque, "More opaque (hold)"),
+            new HudHotkeyRow(map.LessOpaque, "Less opaque (hold)"),
             new HudHotkeyRow(map.Quit, "Quit"),
         ];
 

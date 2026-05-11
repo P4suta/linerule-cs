@@ -47,6 +47,13 @@ WM_DESTROY
 WM_DPICHANGED
 WM_DISPLAYCHANGE
 
+// Long-press auto-repeat: HotkeyRepeater polls GetAsyncKeyState for the
+// chord's VKs between repeat fires, using OS-keyboard-repeat ergonomics
+// (250 ms initial delay, 50 ms steady interval). MOD_NOREPEAT on the
+// registered hotkey suppresses native WM_HOTKEY flooding, so this is
+// the only "is the chord still held?" signal.
+GetAsyncKeyState
+
 // Non-blocking pump
 PeekMessageW
 PEEK_MESSAGE_REMOVE_TYPE

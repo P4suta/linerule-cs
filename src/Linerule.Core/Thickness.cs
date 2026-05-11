@@ -3,13 +3,17 @@ using System.Runtime.InteropServices;
 namespace Linerule.Core;
 
 /// <summary>
-/// Validating newtype: thickness in <c>1..=512</c> logical pixels. Default <c>28</c>.
+/// Validating newtype: thickness in <c>1..=2048</c> logical pixels. Default <c>28</c>.
+/// Upper bound has grown twice on user request: 512 → 1024 (long-press
+/// auto-repeat landed 2026-05-11), then 1024 → 2048 the same day after
+/// "もっと画面全体の一歩手前ぐらいまでどでかく" — i.e. let the slit cover
+/// nearly the entire viewport even on a 4K display.
 /// </summary>
 [StructLayout(LayoutKind.Auto)]
 public readonly record struct Thickness
 {
     public const ushort MinValue = 1;
-    public const ushort MaxValue = 512;
+    public const ushort MaxValue = 2048;
 
     public ushort Value { get; }
 

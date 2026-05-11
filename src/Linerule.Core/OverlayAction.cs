@@ -15,7 +15,14 @@ public abstract record OverlayAction
         public static CycleMode Instance { get; } = new();
     }
 
-    /// <summary>Toggle the global visibility flag (mode is preserved).</summary>
+    /// <summary>
+    /// Toggle the global visibility flag (mode is preserved). The hotkey
+    /// layer's <c>HotkeyRepeater</c> wraps a single chord around two
+    /// behaviors: a tap fires this once and lets the new state stick; a
+    /// long-press (held ≥ 250 ms) fires it again on release, which
+    /// undoes the flip — so the chord doubles as a press-and-peek
+    /// gesture.
+    /// </summary>
     public sealed record ToggleVisible : OverlayAction
     {
         public static ToggleVisible Instance { get; } = new();

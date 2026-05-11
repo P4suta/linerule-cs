@@ -27,12 +27,26 @@ internal sealed partial class HudVisual : IDisposable
 {
     private static readonly LoggerHandle Log = Logger.For(Subsystems.Hud);
 
+    /// <summary>
+    /// Floor on the HUD redraw cadence. The D2D + DirectWrite path
+    /// behind <see cref="HudRenderer.Draw"/> opens a fresh
+    /// <c>ID2D1DeviceContext</c>, mints brushes, and creates per-call
+    /// <c>IDWriteTextLayout</c>s; doing this on every hotkey-driven
+    /// state change (≥ 80 Hz under long-press auto-repeat) showed up as
+    /// a hard process exit with no managed stack — likely a GPU
+    /// resource pressure cliff. 33 ms ≈ 30 Hz is well above the human
+    /// "I can read changing numbers" threshold and stays well within
+    /// the D2D resource budget.
+    /// </summary>
+    private const long MinDrawIntervalMs = 33;
+
     private readonly ContainerVisual _parent;
     private readonly HudRenderer _renderer;
     private readonly SpriteVisual _visual;
     private readonly CompositionSurfaceBrush _brush;
     private readonly HudLayout _layout;
     private HudContent? _last;
+    private long _lastDrawAtMs;
     private float _lastOpacity = 1f;
     private bool _disposed;
 
@@ -66,6 +80,16 @@ internal sealed partial class HudVisual : IDisposable
     /// <see cref="Visual.Opacity"/>. Idempotent for unchanged values
     /// (saves a WinRT property write per tick on steady-state distance).
     /// Values are clamped to [0, 1].
+    ///
+    /// <para>
+    /// When opacity falls below <see cref="CullThreshold"/> the visual is
+    /// also marked <c>IsVisible=false</c>, which tells DComp to skip the
+    /// HUD subtree entirely during the next compose pass — zero pixel
+    /// work, zero shader work. Above the threshold the visual is
+    /// re-enabled. This matches the user expectation that a fully
+    /// transparent HUD should not be silently consuming GPU budget
+    /// (2026-05-11 feedback).
+    /// </para>
     /// </summary>
     public void SetOpacity(float opacity)
     {
@@ -79,12 +103,18 @@ internal sealed partial class HudVisual : IDisposable
             return;
         }
         _visual.Opacity = clamped;
+        _visual.IsVisible = clamped > CullThreshold;
         _lastOpacity = clamped;
     }
 
+    private const float CullThreshold = 0.01f;
+
     /// <summary>
     /// Re-render iff <paramref name="content"/> differs from the last
-    /// rendered payload. Idempotent for unchanged content.
+    /// rendered payload AND we are outside the 33 ms throttle window.
+    /// Skipped updates are dropped, not queued — the TickLoop's wall-clock
+    /// telemetry refresh (every 200 ms) guarantees eventual consistency
+    /// of the visible HUD with the actual state.
     /// </summary>
     public void Update(in HudContent content)
     {
@@ -96,8 +126,14 @@ internal sealed partial class HudVisual : IDisposable
         {
             return;
         }
+        var nowMs = Environment.TickCount64;
+        if (nowMs - _lastDrawAtMs < MinDrawIntervalMs)
+        {
+            return;
+        }
         _renderer.Draw(content);
         _last = content;
+        _lastDrawAtMs = nowMs;
     }
 
     public void Dispose()

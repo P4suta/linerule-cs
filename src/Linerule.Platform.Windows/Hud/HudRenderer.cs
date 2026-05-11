@@ -108,8 +108,16 @@ internal sealed partial class HudRenderer : IDisposable
         a = 0x40 / 255f,
     };
 
-    private const string MonoFontFamily = "Cascadia Code, Consolas, Courier New";
-    private const string TitleFontFamily = "Segoe UI Variable, Segoe UI, sans-serif";
+    // Single font family names — DirectWrite's IDWriteFactory.CreateTextFormat
+    // expects exactly one face per call (it does NOT parse CSS-style
+    // comma-separated fallback lists; an unrecognized name silently maps
+    // to the system default, which is proportional — so the prior
+    // "Cascadia Code, Consolas, Courier New" string was rendering as a
+    // proportional substitute, which is why the hotkey rows didn't read
+    // as monospace at all (user feedback 2026-05-11). Cascadia Mono
+    // ships with Windows Terminal and Windows 11; Segoe UI is universal.
+    private const string MonoFontFamily = "Cascadia Mono";
+    private const string TitleFontFamily = "Segoe UI";
 
     // IID for ID2D1DeviceContext (D2D 1.1) — used as `iid` argument to
     // ICompositionDrawingSurfaceInterop.BeginDraw. Byte-array constructor
@@ -189,12 +197,14 @@ internal sealed partial class HudRenderer : IDisposable
     {
         var dxgiDevice = (IDXGIDevice)d3dDevice;
         var factoryIid = typeof(ID2D1Factory1).GUID;
-        PInvoke.D2D1CreateFactory(
-            factoryType: D2D1_FACTORY_TYPE.D2D1_FACTORY_TYPE_SINGLE_THREADED,
-            riid: &factoryIid,
-            pFactoryOptions: null,
-            ppIFactory: out var factoryObj
-        );
+        PInvoke
+            .D2D1CreateFactory(
+                factoryType: D2D1_FACTORY_TYPE.D2D1_FACTORY_TYPE_SINGLE_THREADED,
+                riid: &factoryIid,
+                pFactoryOptions: null,
+                ppIFactory: out var factoryObj
+            )
+            .ThrowOnFailure();
         var d2dFactory = (ID2D1Factory1)factoryObj;
         d2dFactory.CreateDevice(dxgiDevice, out var d2dDevice);
         return d2dDevice;
@@ -240,11 +250,13 @@ internal sealed partial class HudRenderer : IDisposable
     private static unsafe IDWriteFactory CreateDWriteFactory()
     {
         var dwriteIid = typeof(IDWriteFactory).GUID;
-        PInvoke.DWriteCreateFactory(
-            factoryType: DWRITE_FACTORY_TYPE.DWRITE_FACTORY_TYPE_SHARED,
-            iid: &dwriteIid,
-            factory: out var dwriteUnk
-        );
+        PInvoke
+            .DWriteCreateFactory(
+                factoryType: DWRITE_FACTORY_TYPE.DWRITE_FACTORY_TYPE_SHARED,
+                iid: &dwriteIid,
+                factory: out var dwriteUnk
+            )
+            .ThrowOnFailure();
         return (IDWriteFactory)dwriteUnk;
     }
 
@@ -309,7 +321,15 @@ internal sealed partial class HudRenderer : IDisposable
         ID2D1DeviceContext? ctx = null;
         try
         {
-            ctx = (ID2D1DeviceContext)Marshal.GetObjectForIUnknown(ctxPtr);
+            // GetUniqueObjectForIUnknown (vs GetObjectForIUnknown) returns
+            // a fresh RCW per call, never a cached one. BeginDraw can in
+            // principle hand back the same underlying device context
+            // pointer across frames; with the cached-RCW variant the
+            // wrapper would be reused after our ReleaseComObject below,
+            // which races with the surface's own lifecycle on EndDraw.
+            // Unique-RCW costs an allocation per frame but eliminates
+            // that whole class of stale-wrapper hazards.
+            ctx = (ID2D1DeviceContext)Marshal.GetUniqueObjectForIUnknown(ctxPtr);
             SetIdentityWithTranslation(ctx, offset);
             ctx.Clear(Transparent);
             PaintPanel(ctx, content);

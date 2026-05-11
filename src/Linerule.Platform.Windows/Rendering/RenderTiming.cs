@@ -58,7 +58,11 @@ public readonly record struct RenderTiming(int DisplayRefreshHz, TimeSpan FrameB
     public static RenderTiming ForRefreshHz(int refreshHz)
     {
         var hz = refreshHz < 1 ? FallbackRefreshHz : refreshHz;
-        return new RenderTiming(DisplayRefreshHz: hz, FrameBudget: TimeSpan.FromMilliseconds(1000.0 / hz));
+        // Integer division on TicksPerSecond avoids the `1000.0 / hz`
+        // float round-trip — at 60 Hz the result is 166666 ticks
+        // (= 16.6666 ms) exactly, with no double-precision residue that
+        // could surface as a 100ns wobble in downstream comparisons.
+        return new RenderTiming(DisplayRefreshHz: hz, FrameBudget: TimeSpan.FromTicks(TimeSpan.TicksPerSecond / hz));
     }
 
     private static unsafe int ProbePrimaryRefreshHz(LoggerHandle log)

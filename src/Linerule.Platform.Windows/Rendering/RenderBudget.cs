@@ -22,11 +22,14 @@ namespace Linerule.Platform.Windows.Rendering;
 public sealed class RenderBudget
 {
     /// <summary>
-    /// Default warn ratio: log when a tick eats > half the per-frame
-    /// budget. At that point we are at material risk of missing the next
-    /// vsync.
+    /// Default warn ratio: log when a tick eats > 80% of the per-frame
+    /// budget. The earlier 0.5 threshold was reached by routine GPU jitter
+    /// (~9 ms on a 16.6 ms budget) and the WARN log read as alarming for
+    /// what is actually a non-issue (user 2026-05-11 "ちょびちょび警告
+    /// っぽいの怖い"). 0.8 leaves a ~3 ms margin to vsync — wide enough
+    /// to flag actual risk, narrow enough to silence steady-state noise.
     /// </summary>
-    public const double DefaultWarnRatio = 0.5;
+    public const double DefaultWarnRatio = 0.8;
 
     private const int OverrunSamplingPeriod = 60;
 

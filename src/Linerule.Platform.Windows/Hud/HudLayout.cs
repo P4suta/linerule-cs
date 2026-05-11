@@ -7,12 +7,14 @@ namespace Linerule.Platform.Windows.Hud;
 /// Geometry of the HUD panel — derived from monitor dimensions + DPI so
 /// the panel sits at a sensible top-right offset and at a readable size
 /// across 1080p / 1440p / 4K. All values are in physical pixels (the unit
-/// Win2D / Composition draw in).
+/// Composition draws in).
 ///
 /// <para>
-/// <b>Sizing policy</b>: width = 320 logical px = 320 × DPI / 96 physical
-/// px. Height grows with content (set by the renderer after measuring).
-/// Margin from the monitor edge is 16 logical px.
+/// <b>Sizing policy</b>: width × DPI / 96 physical px. Height grows with
+/// content (set by the renderer after measuring). Bumped ×1.7
+/// (2026-05-11) on user request "もっとくそでかい方がよくね" — the panel
+/// is now a visible status surface rather than an inconspicuous corner
+/// chip.
 /// </para>
 /// </summary>
 [StructLayout(LayoutKind.Auto)]
@@ -24,9 +26,9 @@ public readonly record struct HudLayout(
     HudFontSizesPx FontSizes
 )
 {
-    private const float WidthLogical = 300f;
-    private const float HeightLogical = 320f;
-    private const float MarginLogical = 16f;
+    private const float WidthLogical = 520f;
+    private const float HeightLogical = 560f;
+    private const float MarginLogical = 24f;
 
     public static HudLayout ForMonitor(int monitorWidthPx, int monitorMarginRightPx, float dpiScale)
     {

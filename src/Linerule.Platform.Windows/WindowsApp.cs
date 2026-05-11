@@ -108,7 +108,7 @@ public static partial class WindowsApp
         await using var overlay = OverlayWindow.Create(monitor, queue);
         await using var hotkeys = HotkeyHost.Create();
         Log.Info("HotkeyHost created");
-        var cursor = new CursorTracker(overlay.Dpi);
+        var cursor = new CursorTracker();
 
         RegisterAll(hotkeys, config.Hotkeys);
         Log.Info("hotkeys registered", new LogField("hint", "press Ctrl+Alt+R to cycle, Ctrl+Alt+Q to quit"));
@@ -118,6 +118,13 @@ public static partial class WindowsApp
         var timing = RenderTiming.Probe(Log);
         using var hud = CreateHud(overlay);
         await using var loop = new TickLoop(overlay, hotkeys, cursor, queue, timing, hud, config.Hotkeys);
+        // Long-press auto-repeat layer. Constructed AFTER the tick loop
+        // so it can probe `loop.WouldAffectState` — when a held chord's
+        // action would be a no-op (saturated boundary or Off mode), the
+        // repeater stops polling instead of flooding the channel. LIFO
+        // scope cleanup unhooks the repeater from the hotkey host
+        // before the host disposes, so no dangling subscriber.
+        using var repeater = new HotkeyRepeater(queue, hotkeys, loop.WouldAffectState);
         loop.Start();
 
         // Hand the loop's state to CrashDump so post-mortem includes the
@@ -263,24 +270,28 @@ public static partial class WindowsApp
 
     private static IEnumerable<(string Chord, OverlayAction Action)> BuildBindings(HotkeyMap map)
     {
-        // Step sizes: were +4 each. User feedback 2026-05-11 — "spamming the
-        // hotkey to reach max is exhausting." Scaled up to ≈4-8 presses to
-        // span the full range:
-        //   thickness: 1..512 logical px → step 16 (≈32 presses full sweep,
-        //              ~6 from default 28 to 128)
-        //   opacity:   1..255 alpha       → step 24 (≈11 presses full sweep,
-        //              ~4 from default 0xAA=170 to max 0xFF=255)
-        // Long-press auto-repeat is the proper fix; bigger discrete steps
-        // tide us over until that lands.
-        const int ThicknessStep = 16;
-        const int OpacityStep = 24;
+        // Tap step sizes — what one isolated press moves. Held presses
+        // ignore these and shrink to ±1 via HotkeyRepeater so a long
+        // press reads as "stepless" (user feedback 2026-05-11
+        // "感覚としては無段階"). 8 is the sweet spot for one-tap nudges:
+        // chunky enough to feel intentional, fine enough that repeated
+        // taps aren't comically far apart.
+        //   thickness: 1..1024 logical px (Thickness.MaxValue)
+        //   opacity:   1..255 alpha
+        const int ThicknessTapStep = 8;
+        const int OpacityTapStep = 8;
 
         yield return (map.CycleMode, OverlayAction.CycleMode.Instance);
+        // Tap = persistent toggle (the WM_HOTKEY firing flips state and
+        // sticks). HotkeyRepeater detects long-press (≥ 250 ms) and
+        // re-fires the same toggle on release, undoing the flip — so a
+        // sustained hold becomes "peek-through-and-restore" without
+        // changing the bound action (user feedback 2026-05-11).
         yield return (map.ToggleVisible, OverlayAction.ToggleVisible.Instance);
-        yield return (map.Thicker, new OverlayAction.BumpThickness(+ThicknessStep));
-        yield return (map.Thinner, new OverlayAction.BumpThickness(-ThicknessStep));
-        yield return (map.MoreOpaque, new OverlayAction.BumpOpacity(+OpacityStep));
-        yield return (map.LessOpaque, new OverlayAction.BumpOpacity(-OpacityStep));
+        yield return (map.Thicker, new OverlayAction.BumpThickness(+ThicknessTapStep));
+        yield return (map.Thinner, new OverlayAction.BumpThickness(-ThicknessTapStep));
+        yield return (map.MoreOpaque, new OverlayAction.BumpOpacity(+OpacityTapStep));
+        yield return (map.LessOpaque, new OverlayAction.BumpOpacity(-OpacityTapStep));
         yield return (map.Quit, OverlayAction.Quit.Instance);
     }
 
@@ -343,6 +354,21 @@ public static partial class WindowsApp
         }
 
         public void Stop() => _clock.Stop();
+
+        /// <summary>
+        /// Pure probe: would applying <paramref name="action"/> change
+        /// any visible state right now? Used by <see cref="HotkeyRepeater"/>
+        /// to stop its polling loop the moment a held chord reaches a
+        /// saturating boundary (Thickness/Opacity at MAX or MIN, or the
+        /// overlay in Off mode where bumps are intentionally no-op).
+        /// Reads <c>_state</c> but does not mutate it; safe to call from
+        /// the same UI thread that owns the tick loop.
+        /// </summary>
+        public bool WouldAffectState(OverlayAction action)
+        {
+            var (_, delta) = Reduce.Apply(_state, action);
+            return delta.IsAny;
+        }
 
         public async ValueTask DisposeAsync()
         {

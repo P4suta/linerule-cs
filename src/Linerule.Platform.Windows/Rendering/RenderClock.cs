@@ -170,11 +170,29 @@ public sealed partial class RenderClock : IAsyncDisposable
             return;
         }
         _disposed = true;
-        if (_cts is { } cts)
+
+        // Capture both lifetime handles into locals BEFORE doing any
+        // async work — Stop() can be invoked re-entrantly during
+        // shutdown and would otherwise see a half-cleared state. Nulling
+        // the fields up-front makes the later operations effectively
+        // owned by this call.
+        var cts = _cts;
+        var loopTask = _loopTask;
+        _cts = null;
+        _loopTask = null;
+
+        if (cts is not null)
         {
-            await cts.CancelAsync().ConfigureAwait(false);
+            try
+            {
+                await cts.CancelAsync().ConfigureAwait(false);
+            }
+            catch (ObjectDisposedException)
+            {
+                // Already disposed by an earlier path — fine.
+            }
         }
-        if (_loopTask is { } t)
+        if (loopTask is not null)
         {
             // Bounded wait — a wedged compositor mustn't block shutdown
             // forever. One second is generous; the loop typically exits
@@ -182,8 +200,26 @@ public sealed partial class RenderClock : IAsyncDisposable
             // CancellationToken.None deliberately: we ARE the cancellation,
             // so further interruption of the wait would risk leaking the
             // loop task.
-            await Task.WhenAny(t, Task.Delay(TimeSpan.FromSeconds(1), CancellationToken.None)).ConfigureAwait(false);
+            var winner = await Task.WhenAny(loopTask, Task.Delay(TimeSpan.FromSeconds(1), CancellationToken.None))
+                .ConfigureAwait(false);
+            if (winner != loopTask)
+            {
+                Log.Warn("render loop did not exit within 1 s — abandoning task");
+                // Attach a fault-observer so any post-shutdown exception
+                // from the abandoned task is logged rather than landing
+                // in TaskScheduler.UnobservedTaskException silently.
+                _ = loopTask.ContinueWith(
+                    static t =>
+                    {
+                        if (t.IsFaulted && t.Exception is { } ex)
+                        {
+                            Log.Error("abandoned render loop task threw post-shutdown", ex);
+                        }
+                    },
+                    TaskScheduler.Default
+                );
+            }
         }
-        _cts?.Dispose();
+        cts?.Dispose();
     }
 }

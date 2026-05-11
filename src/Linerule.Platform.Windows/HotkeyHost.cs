@@ -35,9 +35,20 @@ public sealed class HotkeyHost : IHotkeyHost
         new UnboundedChannelOptions { SingleReader = true, SingleWriter = true }
     );
     private readonly Dictionary<int, OverlayAction> _idToAction = [];
+    private readonly Dictionary<int, ChordSpec> _idToChord = [];
     private readonly Dictionary<ChordSpec, int> _chordToId = [];
     private int _nextId = 1;
     private bool _disposed;
+
+    /// <summary>
+    /// Fired on the hotkey HWND's UI thread immediately after each
+    /// <c>WM_HOTKEY</c> hits the channel. Carries the chord that fired
+    /// (for long-press tracking against <c>GetAsyncKeyState</c>) and the
+    /// bound action. <see cref="HotkeyRepeater"/> subscribes to this to
+    /// arm its repeat polling — kept as a plain delegate (not an event)
+    /// because there is exactly one subscriber per process.
+    /// </summary>
+    public Action<ChordSpec, OverlayAction>? OnHotkeyFired { get; set; }
 
     private HotkeyHost(HWND hwnd) => _hwnd = hwnd;
 
@@ -91,6 +102,7 @@ public sealed class HotkeyHost : IHotkeyHost
         {
             Win32Guard.Check(PInvoke.UnregisterHotKey(_hwnd, existingId), "UnregisterHotKey (replace)", Log);
             _idToAction.Remove(existingId);
+            _idToChord.Remove(existingId);
             _chordToId.Remove(chord);
         }
 
@@ -112,6 +124,7 @@ public sealed class HotkeyHost : IHotkeyHost
         }
 
         _idToAction[id] = action;
+        _idToChord[id] = chord;
         _chordToId[chord] = id;
         Log.Debug(
             "RegisterHotKey ok",
@@ -127,6 +140,13 @@ public sealed class HotkeyHost : IHotkeyHost
 
     /// <summary>Synchronous drain — used by the dispatcher-queue-driven main loop in <see cref="WindowsApp"/>.</summary>
     internal bool TryDequeue(out OverlayAction action) => _channel.Reader.TryRead(out action!);
+
+    /// <summary>
+    /// Enqueue an action as if a hotkey had fired. Used by
+    /// <c>HotkeyRepeater</c> to inject repeat events while a chord is
+    /// held; bypasses the WM_HOTKEY path so we don't double-fire.
+    /// </summary>
+    internal void Enqueue(OverlayAction action) => _channel.Writer.TryWrite(action);
 
     public unsafe ValueTask DisposeAsync()
     {
@@ -181,6 +201,10 @@ public sealed class HotkeyHost : IHotkeyHost
             if (host._idToAction.TryGetValue(id, out var action))
             {
                 _ = host._channel.Writer.TryWrite(action);
+                if (host._idToChord.TryGetValue(id, out var chord))
+                {
+                    host.OnHotkeyFired?.Invoke(chord, action);
+                }
             }
             return new LRESULT(0);
         }

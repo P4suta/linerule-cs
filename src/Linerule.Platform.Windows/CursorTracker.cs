@@ -1,4 +1,3 @@
-using System;
 using System.Runtime.InteropServices;
 using System.Threading;
 using Linerule.Core;
@@ -8,17 +7,25 @@ using Linerule.Platform.Windows.Diagnostics;
 namespace Linerule.Platform.Windows;
 
 /// <summary>
-/// <c>GetCursorPos</c>-backed mouse tracker. Returns the cursor in logical
-/// pixels, derived from the per-window DPI scale at construction.
-/// Uses a hand-defined cursor-position struct + <c>DllImport</c> to avoid
-/// CsWin32 metadata quirks where the Win32 <c>POINT</c> type sometimes fails
-/// to be generated for this combination of TFM and metadata version.
+/// <c>GetCursorPos</c>-backed mouse tracker. Returns the cursor in HWND
+/// pixel space — i.e. physical pixels for a per-monitor-V2 DPI-aware
+/// process, which is what every downstream consumer (Composition visual
+/// tree, HUD geometry, slit math) operates in. Uses a hand-defined
+/// cursor-position struct + <c>LibraryImport</c> to avoid CsWin32
+/// metadata quirks where the Win32 <c>POINT</c> type sometimes fails to
+/// be generated for this combination of TFM and metadata version.
+///
+/// <para>
+/// <b>Phantom type</b>: the return type is labeled
+/// <see cref="Point{Logical}"/> for historical reasons; the value is in
+/// fact in HWND pixel space (= physical pixels). Renaming the phantom
+/// tag to <c>HwndPx</c> is a pipeline-wide follow-up.
+/// </para>
 /// </summary>
-public sealed partial class CursorTracker(uint dpi) : IMouseTracker
+public sealed partial class CursorTracker : IMouseTracker
 {
     private static readonly LoggerHandle Log = Logger.For(Subsystems.CursorTracker);
 
-    private readonly float _scale = dpi / 96f;
     private int _failureCount;
 
     public Point<Logical>? Poll()
@@ -47,16 +54,6 @@ public sealed partial class CursorTracker(uint dpi) : IMouseTracker
             _failureCount = 0;
         }
 
-        // GetCursorPos returns physical pixels on a per-monitor V2 process,
-        // which is the same coordinate space as the HWND and the Composition
-        // visual tree (MonitorInfo.PrimaryBounds + CreateWindowExW both
-        // operate in physical pixels here). Passing the value through
-        // unscaled keeps the rendered highlight aligned with the actual
-        // pointer position (verified 2026-05-11: dividing by _scale at 150%
-        // DPI offsets the bar ~1/3 of the screen to the left of the cursor).
-        // The `Point<Logical>` phantom-type label is preserved for now —
-        // the pipeline-wide rename to a more accurate marker is follow-up.
-        _ = _scale; // keep the field for future hi-DPI heuristics.
         return new Point<Logical>(raw.X, raw.Y);
     }
 

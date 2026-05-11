@@ -42,6 +42,16 @@ public static class Reduce
 
     private static (State, StateDelta) BumpThickness(State state, int delta)
     {
+        // In Off mode the slit isn't rendered, so a thickness change has
+        // nothing to attach to — user feedback 2026-05-11
+        // 「OFFにしている間は明るさ変更・太さ変更もいっさいが無視される
+        // ようにするべきだね」. Returning None here also lets
+        // HotkeyRepeater observe a saturating predicate and stop polling
+        // (= no wasted channel writes during a held-down chord).
+        if (state.Mode == Mode.Off)
+        {
+            return (state, StateDelta.None);
+        }
         var nextThickness = state.Config.Thickness.SaturatingAdd(delta);
         if (nextThickness == state.Config.Thickness)
         {
@@ -54,6 +64,10 @@ public static class Reduce
 
     private static (State, StateDelta) BumpOpacity(State state, int delta)
     {
+        if (state.Mode == Mode.Off)
+        {
+            return (state, StateDelta.None);
+        }
         var nextOpacity = state.Config.Opacity.SaturatingAdd(delta);
         if (nextOpacity == state.Config.Opacity)
         {

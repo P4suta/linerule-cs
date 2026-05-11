@@ -13,14 +13,17 @@ public abstract record CoreError
     /// <summary>Opacity outside the valid <c>1..=255</c> range.</summary>
     public sealed record Opacity(int Given) : CoreError;
 
-    /// <summary>Thickness outside the valid <c>1..=512</c> range.</summary>
+    /// <summary>Thickness outside the valid <c>1..=2048</c> range.</summary>
     public sealed record Thickness(int Given) : CoreError;
 
     public string ToHumanString() =>
         this switch
         {
             Opacity o => string.Create(CultureInfo.InvariantCulture, $"opacity must be in 1..=255 (got {o.Given})"),
-            Thickness t => string.Create(CultureInfo.InvariantCulture, $"thickness must be in 1..=512 (got {t.Given})"),
+            Thickness t => string.Create(
+                CultureInfo.InvariantCulture,
+                $"thickness must be in 1..=2048 (got {t.Given})"
+            ),
             _ => throw new System.Diagnostics.UnreachableException(),
         };
 }

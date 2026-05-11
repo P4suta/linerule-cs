@@ -11,7 +11,7 @@ public sealed class ThicknessTests
     [Theory]
     [InlineData(1)]
     [InlineData(28)]
-    [InlineData(512)]
+    [InlineData(2048)]
     public void TryCreate_accepts_valid(int value)
     {
         var result = Thickness.TryCreate(value);
@@ -21,7 +21,7 @@ public sealed class ThicknessTests
 
     [Theory]
     [InlineData(0)]
-    [InlineData(513)]
+    [InlineData(2049)]
     [InlineData(-5)]
     public void TryCreate_rejects_invalid(int value)
     {
@@ -32,7 +32,7 @@ public sealed class ThicknessTests
     [Theory]
     [InlineData(28, +4, 32)]
     [InlineData(28, -100, 1)]
-    [InlineData(28, +1000, 512)]
+    [InlineData(28, +5000, 2048)]
     public void SaturatingAdd_clamps(int start, int delta, int expected)
     {
         var th = ((Result<Thickness, CoreError>.Ok)Thickness.TryCreate(start)).Value;
