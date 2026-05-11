@@ -72,7 +72,7 @@ public static class TickPipeline
         {
             if (action is OverlayAction.Quit)
             {
-                effects.Add(TickEffect.Exit.Instance);
+                effects.Add(TickEffect.Quit.Instance);
                 return new HotkeyDrain(state, anyStateChange, Quit: true, effects);
             }
             var (next, delta) = Reduce.Apply(state, action);

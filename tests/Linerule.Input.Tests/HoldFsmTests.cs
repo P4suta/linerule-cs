@@ -6,7 +6,7 @@ using Linerule.Platform;
 namespace Linerule.Input.Tests;
 
 /// <summary>
-/// Behaviour of the pure <see cref="HoldFsm.Step"/> reducer: every transition
+/// Behavior of the pure <see cref="HoldFsm.Step"/> reducer: every transition
 /// is exhaustive (closed sum), <see cref="HoldState.Idle"/> is the
 /// quiescent identity, sign-zero bumps short-circuit, saturation stops
 /// repeats, and the long-press-undo timing matches the historic
@@ -43,7 +43,7 @@ public sealed class HoldFsmTests
         var fired = new HoldInput.Fired(Chord, new OverlayAction.BumpThickness(0), NowMs: 100);
         var (next, fx) = HoldFsm.Step(HoldState.Idle.Instance, fired, Cfg);
         Assert.Same(HoldState.Idle.Instance, next);
-        Assert.Contains(fx, e => e is HoldEffect.Stop);
+        Assert.Contains(fx, e => e is HoldEffect.Halt);
     }
 
     [Fact]
@@ -83,7 +83,7 @@ public sealed class HoldFsmTests
         var tick = new HoldInput.Tick(NowMs: 500, StillHeld: false, ConstantOracle.AlwaysProgress);
         var (next, fx) = HoldFsm.Step(rep, tick, Cfg);
         Assert.Same(HoldState.Idle.Instance, next);
-        Assert.Contains(fx, e => e is HoldEffect.Stop);
+        Assert.Contains(fx, e => e is HoldEffect.Halt);
     }
 
     [Fact]
@@ -93,7 +93,7 @@ public sealed class HoldFsmTests
         var tick = new HoldInput.Tick(NowMs: 500, StillHeld: true, ConstantOracle.AlwaysSaturated);
         var (next, fx) = HoldFsm.Step(rep, tick, Cfg);
         Assert.Same(HoldState.Idle.Instance, next);
-        Assert.Contains(fx, e => e is HoldEffect.Stop);
+        Assert.Contains(fx, e => e is HoldEffect.Halt);
         Assert.DoesNotContain(fx, e => e is HoldEffect.Enqueue);
     }
 
@@ -105,7 +105,7 @@ public sealed class HoldFsmTests
         var (next, fx) = HoldFsm.Step(awaiting, earlyRelease, Cfg);
         Assert.Same(HoldState.Idle.Instance, next);
         Assert.DoesNotContain(fx, e => e is HoldEffect.Enqueue);
-        Assert.Contains(fx, e => e is HoldEffect.Stop);
+        Assert.Contains(fx, e => e is HoldEffect.Halt);
     }
 
     [Fact]

@@ -4,7 +4,7 @@ using Linerule.Input;
 namespace Linerule.Input.Tests;
 
 /// <summary>
-/// Behaviour of <see cref="HudFadeKernel"/>: opacity reaches 1 at infinite
+/// Behavior of <see cref="HudFadeKernel"/>: opacity reaches 1 at infinite
 /// gap, 0 at full overlap, decays monotonically in between, and short-circuits
 /// to 1 when no slit is currently drawn (Off / hidden).
 /// </summary>

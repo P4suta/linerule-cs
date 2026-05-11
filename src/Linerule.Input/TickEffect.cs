@@ -13,9 +13,9 @@ public abstract record TickEffect
     private protected TickEffect() { }
 
     /// <summary>Quit was observed in the hotkey queue: exit the event loop.</summary>
-    public sealed record Exit : TickEffect
+    public sealed record Quit : TickEffect
     {
-        public static Exit Instance { get; } = new();
+        public static Quit Instance { get; } = new();
     }
 
     /// <summary>Draw an overlay frame for the supplied state at <paramref name="Cursor"/>.</summary>

@@ -3,7 +3,7 @@ using Linerule.Config;
 namespace Linerule.Config.Tests;
 
 /// <summary>
-/// Behaviour of <see cref="Validation{T}"/> as an applicative functor:
+/// Behavior of <see cref="Validation{T}"/> as an applicative functor:
 /// <see cref="Validation.Map"/> preserves bags, and the <c>ApplyN</c> family
 /// concatenates diagnostics across independent branches without
 /// short-circuiting.
@@ -70,7 +70,7 @@ public sealed class ValidationTests
     [Fact]
     public void Apply2InvokesFunctionEvenOnFatalUsingFallbackOrDefault()
     {
-        // Apply* always materialise: in the validation flow each branch
+        // Apply* always materialize: in the validation flow each branch
         // supplies a usable fallback (RangeValidator.InRange,
         // ValidateHudColors et al.), so the combining function is safe to
         // call regardless of severity. Failures surface through Errors.
