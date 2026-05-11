@@ -6,7 +6,7 @@ using Linerule.Platform;
 namespace Linerule.Input.Tests;
 
 /// <summary>
-/// Behaviour of the pure <see cref="HoldFsm.Step"/> reducer: every transition
+/// Behavior of the pure <see cref="HoldFsm.Step"/> reducer: every transition
 /// is exhaustive (closed sum), <see cref="HoldState.Idle"/> is the
 /// quiescent identity, sign-zero bumps short-circuit, saturation stops
 /// repeats, and the long-press-undo timing matches the historic

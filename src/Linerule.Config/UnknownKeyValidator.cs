@@ -11,7 +11,7 @@ namespace Linerule.Config;
 internal static class UnknownKeyValidator
 {
     /// <summary>
-    /// Materialise an unknown-keys bag for one config section.
+    /// Materialize an unknown-keys bag for one config section.
     /// <paramref name="dotPathPrefix"/> may be the empty string for the
     /// top-level table; in that case the key itself is the full dot-path.
     /// </summary>

@@ -62,7 +62,7 @@ public sealed class DiagnosticBagTests
         var combined = DiagnosticBag.Combine(left, right);
         Assert.Equal(3, combined.Count);
         Assert.Equal(DiagnosticSeverity.Warning, combined.Severity);
-        // Materialise into a typed IEnumerable<string> so IDE0305 (collection
+        // Materialize into a typed IEnumerable<string> so IDE0305 (collection
         // simplification) is satisfied without triggering xUnit's
         // Span/T-overload ambiguity (which a bare `[.. select]` produces).
         IEnumerable<string> actual = combined.Build().Select(d => d.Message);

@@ -123,5 +123,5 @@ together, `WithUnknownKeys(...)` folds the section's unknown-keys list in.
 - `src/Linerule.Config/CrossFieldValidator.cs` — cross-field invariants
 - `tests/Linerule.Config.Tests/SeverityLatticeTests.cs` — exhaustive law tests
 - `tests/Linerule.Config.Tests/DiagnosticBagTests.cs` — monoid law tests
-- `tests/Linerule.Config.Tests/ValidationTests.cs` — applicative behaviour
+- `tests/Linerule.Config.Tests/ValidationTests.cs` — applicative behavior
 - `tests/Linerule.Config.Tests/RangeValidatorTests.cs` — boundary / NaN tests

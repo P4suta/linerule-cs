@@ -4,7 +4,7 @@ using Linerule.Input;
 namespace Linerule.Input.Tests;
 
 /// <summary>
-/// Behaviour of the pure <see cref="TickPipeline.Step"/> reducer. Mirrors the
+/// Behavior of the pure <see cref="TickPipeline.Step"/> reducer. Mirrors the
 /// historical <c>WindowsApp.TickLoop.OnTick</c> contract: Quit short-circuits,
 /// state changes redraw the overlay and refresh the HUD, cursor moves drive
 /// HUD opacity follow, and the HUD telemetry refresh happens on a wall-clock
