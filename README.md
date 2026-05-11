@@ -4,11 +4,7 @@ Reading-ruler overlay for Windows. C# / .NET 10 + Windows App SDK 2.0 + Windows.
 
 ## Why this exists
 
-`linerule` (Rust) ships v0.1 with a `LWA_COLORKEY` workaround — `wgpu` doesn't expose DirectComposition, so per-pixel alpha is faked by routing pure black to transparent and shifting the dim mask to near-black `(8,8,8)`. The architectural cost is a lie in `Rgba::DefaultMask`.
-
-`Windows.UI.Composition.Compositor` + `ICompositorDesktopInterop.CreateDesktopWindowTarget` sits directly on DirectComposition. With `WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_NOREDIRECTIONBITMAP` (LAYERED owns cross-process click routing, NOREDIRECTIONBITMAP keeps DComp draw direct), true per-pixel alpha is available on Day 1 and `Rgba.DefaultMask` is restored to pure black `(0,0,0,0xCC)`. See [ADR-0009 v3](docs/adr/0009-transparency-via-dcomp.md) for the empirical trail.
-
-This is the architectural payoff that justifies the rewrite. The two implementations coexist as parallel ports; neither is freezing.
+`Windows.UI.Composition.Compositor` + `ICompositorDesktopInterop` sits directly on DirectComposition, giving true per-pixel alpha on Day 1 — `Rgba.DefaultMask` is pure black `(0,0,0,0xCC)`. See [ADR-0009](docs/adr/0009-transparency-via-dcomp.md) for the full rationale.
 
 ## Layout
 
@@ -17,11 +13,14 @@ src/
   Linerule.Core/       net10.0           ADTs, render(), reduce() — pure
   Linerule.Config/     net10.0           Tomlyn schema + diagnostics
   Linerule.Platform/   net10.0-windows…  Composition + Win32 click-through + hotkeys
-  Linerule.Cli/        net10.0-windows…  System.CommandLine entry
+  Linerule.Cli/        net10.0-windows…  Exe (CUI) — `linerule.exe`, full subcommand surface
+  Linerule.App/        net10.0-windows…  WinExe (GUI) — `Linerule.exe`, double-click launcher
   Linerule.XTask/      net10.0           defensive lint gate
 tests/                                   xUnit v3 + FsCheck v3 + Verify
 docs/adr/                                ADRs (mirror Rust 1:1)
 ```
+
+Two frontends share the same `Linerule.Core` / `Linerule.Platform.Windows` / `Linerule.Diagnostics.Storage` hexagon — terminal use goes through the CLI, double-click goes through the GUI launcher. See ADR-0007 for the split.
 
 ## Build (Docker-first)
 
@@ -37,9 +36,15 @@ just shell         # interactive bash inside the container
 just ci            # Local replica of the GHA pipeline
 ```
 
-`Linerule.Core` / `Linerule.Config` / `Linerule.Platform` (TFM `net10.0`) build and test fully in the container.
+The cross-platform projects (`net10.0`) build and test fully in the container. The Windows-targeted projects (`net10.0-windows10.0.22621.0`) also **build** in the container — WinAppSDK reference assemblies are platform-neutral. The produced executables only **run** on Windows. See ADR-0005.
 
-`Linerule.Platform.Windows` / `Linerule.Cli` (TFM `net10.0-windows10.0.22621.0`) **build** in the container too — WinAppSDK reference assemblies are platform-neutral. The produced executable only **runs** on Windows; for that, copy the `artifacts/publish` output to a Windows host or run from `\\wsl.localhost\Ubuntu\…` after `just publish`. See ADR-0005.
+```sh
+just publish        # CLI Release  → artifacts/publish/linerule.exe       (terminal use)
+just publish-dist   # GUI Release  → artifacts/publish-dist/Linerule.exe  (double-click)
+just publish-debug  # CLI Debug    → artifacts/publish-debug/linerule.exe (WinDbg / dotnet-dump)
+```
+
+The distribution build (`publish-dist`) opens no console window on launch — copy the whole `artifacts/publish-dist/` directory to the target machine, then double-click `Linerule.exe`. Logs flow into `%APPDATA%\linerule\events.sqlite` (ADR-0012).
 
 ## Tooling (Day 1)
 
@@ -51,7 +56,7 @@ All baked into the dev container; no host-side install required.
 - **actionlint** — GitHub Actions linter for `.github/workflows/*`.
 - **commitlint** — Conventional Commits enforcement. Local hook via lefthook; CI via `wagoid/commitlint-github-action`. Config: `commitlint.config.js`.
 - **lefthook** — git hooks runner. `just hooks` installs the hooks; the binary itself runs in the container.
-- **Linerule.XTask `strict-code`** — repo-specific banned-regex sweep (memory: `feedback_defensive_gates_upfront`).
+- **Linerule.XTask `strict-code`** — repo-specific banned-regex sweep.
 
 ```sh
 # First-time setup on a fresh clone
@@ -61,29 +66,15 @@ just hooks                     # install lefthook git hooks
 
 ## CI
 
-`.github/workflows/ci.yml` runs the following jobs in parallel on every PR / `main` push:
-
-- **build-test-linux** — `dotnet build/test` for cross-platform projects, with coverage collection and a sticky PR comment.
-- **build-test-windows** — full stack including WinAppSDK runtime; uploads single-file binary artifact.
-- **aot-canary** — `<PublishAot>` regression canary (`continue-on-error: true`).
-- **format** — CSharpier check + `dotnet format --verify-no-changes`.
-- **strict-code** — `Linerule.XTask` banned-regex sweep.
-- **typos** / **actionlint** / **conventional-commits** (PR only).
-- **vuln-check** — `dotnet list package --vulnerable` (fails) + `--deprecated` (info).
-- **dependency-review** (PR only) — `actions/dependency-review-action`, `fail-on-severity: high`.
-
-`.github/workflows/codeql.yml` runs CodeQL `security-and-quality` queries on Windows.
-
-`.github/workflows/dependabot-automerge.yml` auto-merges Dependabot patch / minor PRs.
-
-Every action is SHA-pinned (memory: `feedback_prefer_latest_not_pinning`); Dependabot bumps `nuget` / `npm` / `docker` / `github-actions` weekly.
+Linux + Windows parallel jobs on every PR / `main` push — see ADR-0008 for the job topology. Every action is SHA-pinned; Dependabot bumps weekly. CodeQL runs on Windows; Dependabot patch/minor PRs auto-merge.
 
 ## ADR pointers
 
 - `docs/adr/0001-tech-stack.md` — WinAppSDK 2.0 / CsWin32 / Tomlyn / xUnit v3 rationale
-- `docs/adr/0009-transparency-via-dcomp.md` — counter-ADR to Rust 0009 (no color-key)
-- `docs/adr/0008-ci-strategy.md` — CI job topology + SHA-pin policy
 - `docs/adr/0005-build-environment-exception.md` — Docker-first build; Windows is a runtime exception
+- `docs/adr/0007-release-pipeline.md` — CLI/GUI two-frontend split
+- `docs/adr/0008-ci-strategy.md` — CI job topology + SHA-pin policy
+- `docs/adr/0009-transparency-via-dcomp.md` — per-pixel alpha via DComp
 - `docs/adr/0012-sqlite-writer-only-event-store.md` — `events.sqlite` is the contract; analysis is external
 
 ## Analyzing the event log

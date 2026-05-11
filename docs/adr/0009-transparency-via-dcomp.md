@@ -3,36 +3,7 @@
 **Status**: Accepted (v3 — supersedes v2's WS_EX_LAYERED-only / Microsoft.UI.Composition path)
 **Date**: 2026-05-11
 
-## v1 (deprecated) — what we tried first
-
-- HWND created with `WS_EX_NOREDIRECTIONBITMAP` alone so DComp drew straight to DWM with no redirection surface.
-- `Windows.UI.Composition.Compositor` + `ContentIsland.CreateForSystemVisual`.
-- `bridge.ProcessesPointerInput = false` + `WS_EX_TRANSPARENT` + `WM_NCHITTEST → HTTRANSPARENT` for click-through.
-
-**Verified empirically broken (2026-05-11).** Diagnostic logging proved:
-- Our WndProc IS reached (`WM_NCHITTEST` count climbs ~55/sec).
-- We DO return `HTTRANSPARENT`.
-- Click `WM_LBUTTONDOWN` never reaches our WndProc.
-- BUT clicks also never reach the underlying app (Notepad / Edge / Explorer).
-
-The `WS_EX_NOREDIRECTIONBITMAP` window has no redirection surface for DWM to use as the cross-process hit-test target; DWM has nothing to route the click through. The clicks land in nothing. We isolated the redirection-bitmap presence as the load-bearing constraint by swapping to `WS_EX_LAYERED + LWA_ALPHA` — clicks immediately worked.
-
-## v2 (deprecated) — what came next
-
-- HWND: `WS_EX_LAYERED | WS_EX_TRANSPARENT` (NO `WS_EX_NOREDIRECTIONBITMAP`).
-- `Microsoft.UI.Composition.Compositor` + `ContentIsland.Create(Visual)` + `DesktopAttachedSiteBridge.CreateFromWindowId(queue, windowId).Connect(island)`.
-
-**Verified empirically broken (2026-05-11).** With diagnostic try/catch wrapping `bridge.Connect(island)` (commit `be48cae`), the published exe logs:
-
-```
-Bridge | bridge.Connect(island) about to call
-```
-
-…and the process exits — no managed exception, no crash dump, no further JSONL. Native wedge inside `DesktopAttachedSiteBridge.Connect` when the target HWND has `WS_EX_LAYERED`.
-
-`Microsoft.UI.Composition.Compositor` does NOT expose `ICompositorDesktopInterop`. Its attachment story is `ContentIsland.Create` + `DesktopAttachedSiteBridge.Connect` (the WinUI 3 islands path); that combination ships fine on non-layered HWNDs (cf. `microsoft/WindowsAppSDK-Samples` `Samples/Islands/UXFrameworksOnIslands/TopLevelWindow.cpp` — `dwExStyle = 0`) but is empirically broken for `WS_EX_LAYERED` HWNDs in WinAppSDK 2.0.
-
-## v3 (accepted) — canonical PowerToys pattern
+## Accepted: canonical PowerToys pattern
 
 ```
 HWND ex-style:
@@ -67,16 +38,16 @@ Root visual:   ContainerVisual { RelativeSizeAdjustment = (1, 1) } → target.Ro
 
 ## Why this is data-driven
 
-- **Production reference**: `microsoft/PowerToys` `src/modules/MouseUtils/MouseHighlighter/MouseHighlighter.cpp` ships exactly the use case we're chasing — transparent click-through overlay over the desktop — with the same pattern.
-- **Official C# binding**: `microsoft/Windows.UI.Composition-Win32-Samples` `dotnet/WPF/AcrylicEffect/CompositionHost.cs` is the Microsoft sample for the C# COM-import of `ICompositorDesktopInterop`.
-- **Empirical bisection (this repo, 2026-05-11)**: v1 failed cross-process click-through; v2 failed native bridge.Connect on `WS_EX_LAYERED`; v3 is the remaining combination, validated against production PowerToys.
+- **Production reference**: `microsoft/PowerToys` `src/modules/MouseUtils/MouseHighlighter/MouseHighlighter.cpp` ships exactly this use case.
+- **Official C# binding**: `microsoft/Windows.UI.Composition-Win32-Samples` `dotnet/WPF/AcrylicEffect/CompositionHost.cs` is the Microsoft C# sample for `ICompositorDesktopInterop`.
+- **Empirical bisection**: `WS_EX_NOREDIRECTIONBITMAP` alone drops cross-process clicks; `Microsoft.UI.Composition` + `DesktopAttachedSiteBridge` wedges natively on `WS_EX_LAYERED`. This combination is the remainder.
 - **Microsoft official docs (DirectComposition / Basic Concepts)**: "the composition target window can be a layered window; that is, it can have the WS_EX_LAYERED window style."
 
 ## What this also unlocks
 
 - **HUD rendering pipeline (Microsoft-pure)**: `Windows.UI.Composition.CompositionDrawingSurface` → `ICompositionDrawingSurfaceInterop.BeginDraw(IID_ID2D1DeviceContext)` → `ID2D1DeviceContext`, direct Direct2D + DirectWrite drawing into the same composition target as the overlay. Direct2D / DirectWrite / Direct3D11 / DXGI types are source-gen'd by `Microsoft.Windows.CsWin32` from `NativeMethods.txt`. Third-party D2D wrappers (Win2D, Vortice, SharpDX, …) are out — Microsoft official (CsWin32 + win32metadata + CsWinRT) is the entire interop story. The HUD shares the overlay's compositor: one HWND, one visual tree, no GDI fallback.
-- **Two DispatcherQueues on the UI thread**: `new Windows.UI.Composition.Compositor()` requires a `Windows.System.DispatcherQueue` on the calling thread (otherwise throws `RPC_E_WRONG_THREAD` — verified empirically 2026-05-11). `Microsoft.UI.Dispatching.DispatcherQueueController` (used by `RenderClock` / `HotkeyHost` / `TickLoop` for `DispatcherQueueTimer` and `EnqueueEventLoopExit`) does NOT satisfy this — the WinAppSDK lifted queue and the system queue are independent. `WindowsApp.RunCoreAsync` therefore stands up both: `Windows.System.DispatcherQueueController.CreateOnCurrentThread` first (load-bearing for the Compositor), then `Microsoft.UI.Dispatching.DispatcherQueueController.CreateOnCurrentThread` for the timers + event-loop exit. Both queues coexist on the same thread per WinAppSDK docs.
-- **No `Microsoft.Graphics.Win2D` dependency**: the WinAppSDK-bound Win2D was the previous HUD path but it hard-couples to `Microsoft.UI.Composition.Compositor` and refuses `Windows.UI.Composition.Compositor` (verified 2026-05-11 with `CS1503` build errors). Dropping it removes the only third-party graphics package from the Platform.Windows assembly.
+- **Two DispatcherQueues on the UI thread**: `new Windows.UI.Composition.Compositor()` requires a `Windows.System.DispatcherQueue` on the calling thread. `Microsoft.UI.Dispatching.DispatcherQueueController` (used by timers + event-loop exit) does NOT satisfy this — the WinAppSDK lifted queue and the system queue are independent. `WindowsApp.RunCoreAsync` stands up both: `Windows.System.DispatcherQueueController.CreateOnCurrentThread` first (load-bearing for the Compositor), then `Microsoft.UI.Dispatching.DispatcherQueueController.CreateOnCurrentThread` for the timers. Both queues coexist on the same thread per WinAppSDK docs.
+- **No `Microsoft.Graphics.Win2D` dependency**: Win2D hard-couples to `Microsoft.UI.Composition.Compositor` and refuses `Windows.UI.Composition.Compositor`. Dropping it removes the only third-party graphics package from the Platform.Windows assembly.
 
 ## Verification
 
@@ -104,16 +75,13 @@ Root visual:   ContainerVisual { RelativeSizeAdjustment = (1, 1) } → target.Ro
 
 ## Alternatives considered (and rejected)
 
-- **Microsoft.UI.Composition + ContentIsland + DesktopAttachedSiteBridge** (v2): empirically wedges natively on `WS_EX_LAYERED` HWNDs (verified 2026-05-11). The "modern" path Microsoft markets but it does not yet cover the click-through transparent overlay use case.
-- **`WS_EX_NOREDIRECTIONBITMAP` alone + DComp + a second HWND for the HUD with GDI text** (v1 retreat): two windows + GDI is the architectural retreat the user explicitly rejected.
-- **Microsoft.Graphics.Win2D**: WinAppSDK 2.0 / Microsoft.UI.Composition に hard-bind されており、`Windows.UI.Composition.Compositor` を受け取らない (CS1503 / CS0103 で build fail、2026-05-11 検証)。HUD 用途で `UseWinUI=false` にしても type projection は変わらない。
-- **Vortice.Windows (Direct2D1 + Direct3D11)**: 同じ機能を提供する .NET binding として mainstream だが third-party。Microsoft 純粋路線 (CsWin32 + win32metadata) で同等の source-gen が得られるため、不要な OSS 依存として却下。
+- **Microsoft.UI.Composition + ContentIsland + DesktopAttachedSiteBridge**: wedges natively on `WS_EX_LAYERED` HWNDs — does not cover the click-through transparent overlay use case.
+- **`WS_EX_NOREDIRECTIONBITMAP` alone + DComp**: drops cross-process clicks; DWM has no redirection surface to route through.
+- **Microsoft.Graphics.Win2D**: hard-binds to `Microsoft.UI.Composition.Compositor` and rejects `Windows.UI.Composition.Compositor` (CS1503/CS0103). Type projection does not change with `UseWinUI=false`.
+- **Vortice.Windows (Direct2D1 + Direct3D11)**: mainstream .NET binding but third-party. CsWin32 + win32metadata provides equivalent source-gen; no additional OSS dependency needed.
 
 ## References
 
 - `microsoft/PowerToys` `src/modules/MouseUtils/MouseHighlighter/MouseHighlighter.cpp`
 - `microsoft/Windows.UI.Composition-Win32-Samples` `dotnet/WPF/AcrylicEffect/CompositionHost.cs`
-- Empirical evidence (JSONL): end-to-end runs 2026-05-11 (v1 click-drop, v2 bridge.Connect wedge)
 - Microsoft docs (DirectComposition basic concepts; `ICompositorDesktopInterop` API reference)
-- Auto-memory: `feedback_winappsdk_clickthrough_overlay`
-- Plan file: `~/.claude/plans/repository-state-compressed-conway.md`
