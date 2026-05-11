@@ -7,10 +7,6 @@ using Linerule.Platform;
 
 namespace Linerule.Diagnostics.Tests;
 
-/// <summary>
-/// Exit-code mapping and rendering for the <see cref="LineruleError"/>
-/// closed coproduct.
-/// </summary>
 public sealed class LineruleErrorTests
 {
     private sealed class CapturingSink : IDiagnosticSink

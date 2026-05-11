@@ -2,11 +2,6 @@ using Linerule.Config;
 
 namespace Linerule.Config.Tests;
 
-/// <summary>
-/// Monoid laws of <see cref="DiagnosticBag"/> under <see cref="DiagnosticBag.Combine"/>:
-/// associativity with identity <see cref="DiagnosticBag.Empty"/>, plus running
-/// join behavior of <see cref="DiagnosticBag.Severity"/>.
-/// </summary>
 public sealed class DiagnosticBagTests
 {
     // Single allocation reused across asserts — satisfies CA1861 (prefer

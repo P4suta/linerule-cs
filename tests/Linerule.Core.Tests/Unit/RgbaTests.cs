@@ -5,8 +5,7 @@ public sealed class RgbaTests
     [Fact]
     public void DefaultMask_is_pure_black_not_near_black()
     {
-        // Architectural assertion: WinAppSDK + DComp gives true per-pixel alpha,
-        // so we restore Rust v0.1's near-black (8,8,8) hack to pure black.
+        // WinAppSDK + DComp gives true per-pixel alpha — pure black is correct.
         // See docs/adr/0009-transparency-via-dcomp.md.
         Assert.Equal(0, Rgba.DefaultMask.R);
         Assert.Equal(0, Rgba.DefaultMask.G);

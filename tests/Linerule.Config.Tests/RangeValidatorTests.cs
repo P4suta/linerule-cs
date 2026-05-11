@@ -2,12 +2,6 @@ using Linerule.Config;
 
 namespace Linerule.Config.Tests;
 
-/// <summary>
-/// Boundary behavior of the generic <see cref="RangeValidator.InRange{T}"/>:
-/// null silently falls back, exact boundaries succeed, beyond-boundary inputs
-/// rejected with an Error diagnostic that names the dot-path, range, and
-/// fallback. NaN is treated as out of range for IEEE-754 types.
-/// </summary>
 public sealed class RangeValidatorTests
 {
     [Fact]

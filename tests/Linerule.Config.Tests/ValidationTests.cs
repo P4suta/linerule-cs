@@ -2,12 +2,6 @@ using Linerule.Config;
 
 namespace Linerule.Config.Tests;
 
-/// <summary>
-/// Behavior of <see cref="Validation{T}"/> as an applicative functor:
-/// <see cref="Validation.Map"/> preserves bags, and the <c>ApplyN</c> family
-/// concatenates diagnostics across independent branches without
-/// short-circuiting.
-/// </summary>
 public sealed class ValidationTests
 {
     private static ConfigDiagnostic Err(string m) =>
