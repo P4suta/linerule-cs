@@ -20,9 +20,9 @@ public abstract record HoldEffect
     /// <summary>Reschedule the next FSM tick at the given interval.</summary>
     public sealed record Schedule(TimeSpan Next) : HoldEffect;
 
-    /// <summary>Stop the poll timer; the FSM is in a terminal state.</summary>
-    public sealed record Stop : HoldEffect
+    /// <summary>Halt the poll timer; the FSM is in a terminal state.</summary>
+    public sealed record Halt : HoldEffect
     {
-        public static Stop Instance { get; } = new();
+        public static Halt Instance { get; } = new();
     }
 }

@@ -508,7 +508,7 @@ public static partial class WindowsApp
         {
             switch (effect)
             {
-                case TickEffect.Exit:
+                case TickEffect.Quit:
                     _log.Info("Quit requested");
                     _queue.EnqueueEventLoopExit();
                     break;

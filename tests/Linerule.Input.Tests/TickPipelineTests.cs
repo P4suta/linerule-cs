@@ -34,7 +34,7 @@ public sealed class TickPipelineTests
         var (next, fx) = TickPipeline.Step(world, input, telemetryRefreshIntervalMs: 100);
         Assert.Same(world, next);
         Assert.Single(fx);
-        Assert.IsType<TickEffect.Exit>(fx[0]);
+        Assert.IsType<TickEffect.Quit>(fx[0]);
     }
 
     [Fact]

@@ -36,7 +36,7 @@ public static class HoldFsm
 
             (HoldState.Repeating, HoldInput.Tick { StillHeld: false }) => (
                 HoldState.Idle.Instance,
-                [HoldEffect.Stop.Instance]
+                [HoldEffect.Halt.Instance]
             ),
 
             (HoldState.Repeating r, HoldInput.Tick t) => OnRepeatTick(r, t, config),
@@ -91,7 +91,7 @@ public static class HoldFsm
             ),
 
             // Quit / unknown — not a hold target. Stay Idle, stop any timer.
-            _ => (HoldState.Idle.Instance, [HoldEffect.Stop.Instance]),
+            _ => (HoldState.Idle.Instance, [HoldEffect.Halt.Instance]),
         };
 
     private static (HoldState Next, IReadOnlyList<HoldEffect> Effects) BeginBumpRepeat(
@@ -107,7 +107,7 @@ public static class HoldFsm
         // catching it at the first saturation-oracle tick.
         if (sign == 0)
         {
-            return (HoldState.Idle.Instance, [HoldEffect.Stop.Instance]);
+            return (HoldState.Idle.Instance, [HoldEffect.Halt.Instance]);
         }
         var unitStep = wrap(sign);
         return (
@@ -130,7 +130,7 @@ public static class HoldFsm
             // Saturated at MIN/MAX or overlay is Off — nothing useful to
             // emit, polling further wastes the dispatch queue (HUD perf
             // regression 2026-05-11 user report).
-            return (HoldState.Idle.Instance, [HoldEffect.Stop.Instance]);
+            return (HoldState.Idle.Instance, [HoldEffect.Halt.Instance]);
         }
         return (r, [new HoldEffect.Enqueue(scaled), new HoldEffect.Schedule(interval)]);
     }
@@ -144,9 +144,9 @@ public static class HoldFsm
         var heldMs = t.NowMs - a.StartedAtMs;
         if (heldMs >= cfg.LongPressThresholdMs)
         {
-            return (HoldState.Idle.Instance, [new HoldEffect.Enqueue(a.UndoOnLongPress), HoldEffect.Stop.Instance]);
+            return (HoldState.Idle.Instance, [new HoldEffect.Enqueue(a.UndoOnLongPress), HoldEffect.Halt.Instance]);
         }
-        return (HoldState.Idle.Instance, [HoldEffect.Stop.Instance]);
+        return (HoldState.Idle.Instance, [HoldEffect.Halt.Instance]);
     }
 
     /// <summary>
