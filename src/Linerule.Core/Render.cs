@@ -6,7 +6,6 @@ namespace Linerule.Core;
 /// <summary>
 /// Pure render function. Maps the logical state at a moment to a frame. No IO.
 /// Property-tested for monitor-bounds clipping and per-mode layer count.
-/// v0.1 produces 0 (Off) or 3 layers when active: 2 dim regions + 1 mode indicator.
 /// </summary>
 public static class Render
 {

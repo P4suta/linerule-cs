@@ -2,11 +2,7 @@ namespace Linerule.Config;
 
 /// <summary>
 /// Per-section combinator that converts a TOML "unknown keys" list into a
-/// <see cref="DiagnosticBag"/> of <see cref="DiagnosticSeverity.Warning"/>
-/// diagnostics. Replaces the historic ad-hoc <c>ReportUnknownKeys</c> calls
-/// (one per section, nine sites in total) with a single composable builder
-/// that <see cref="Validation{T}.Errors"/> can absorb via
-/// <see cref="WithUnknownKeys{T}(Validation{T}, IReadOnlyList{string}, string, string?, string[]?)"/>.
+/// <see cref="DiagnosticBag"/> of <see cref="DiagnosticSeverity.Warning"/> diagnostics.
 /// </summary>
 internal static class UnknownKeyValidator
 {

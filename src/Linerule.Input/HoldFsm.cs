@@ -9,14 +9,6 @@ namespace Linerule.Input;
 /// branch is exhaustive via pattern matching so any new
 /// <see cref="HoldState"/> or <see cref="HoldInput"/> variant becomes a
 /// compile error here instead of a silent fall-through.
-///
-/// <para>
-/// Cadence schedule (preserved verbatim from the historic
-/// <c>HotkeyRepeater.ComputeNextStep</c>): 20 Hz × 1 for the first 1 s,
-/// 40 Hz × 1 for 1-2 s, 60 Hz × 1 for 2-3 s, then 60 Hz × 4 ("sweep" phase).
-/// 60 Hz is the vsync cap; emissions faster than that aren't observable
-/// and have historically degraded the GPU pipeline (2026-05-11 incident).
-/// </para>
 /// </summary>
 public static class HoldFsm
 {
@@ -102,9 +94,7 @@ public static class HoldFsm
         Func<int, OverlayAction> wrap
     )
     {
-        // Math.Sign(0) is 0, which would seed a repeat that emits a
-        // guaranteed no-op (Delta=0) forever. Bailing here is cheaper than
-        // catching it at the first saturation-oracle tick.
+        // Math.Sign(0) == 0 → repeat would emit Delta=0 no-ops forever.
         if (sign == 0)
         {
             return (HoldState.Idle.Instance, [HoldEffect.Halt.Instance]);
@@ -127,9 +117,7 @@ public static class HoldFsm
         var scaled = WithMagnitude(r.UnitStep, magnitude);
         if (!t.Oracle.CanProgress(scaled))
         {
-            // Saturated at MIN/MAX or overlay is Off — nothing useful to
-            // emit, polling further wastes the dispatch queue (HUD perf
-            // regression 2026-05-11 user report).
+            // Saturated at MIN/MAX or overlay is Off — nothing useful to emit.
             return (HoldState.Idle.Instance, [HoldEffect.Halt.Instance]);
         }
         return (r, [new HoldEffect.Enqueue(scaled), new HoldEffect.Schedule(interval)]);
@@ -149,11 +137,7 @@ public static class HoldFsm
         return (HoldState.Idle.Instance, [HoldEffect.Halt.Instance]);
     }
 
-    /// <summary>
-    /// Map hold-time-since-press onto (next repeat interval, step magnitude).
-    /// Mirrors the historic <c>HotkeyRepeater.ComputeNextStep</c> table; kept
-    /// public so unit tests can exercise the cadence directly.
-    /// </summary>
+    /// <summary>Map hold-time-since-press onto (next repeat interval, step magnitude).</summary>
     public static (TimeSpan Interval, int StepMagnitude) ComputeNextStep(
         long heldMs,
         RepeatCadence cadence,

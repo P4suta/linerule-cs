@@ -16,11 +16,6 @@ namespace Linerule.Config;
 ///   <item>Output: <see cref="Result{T,E}.Ok"/> with the typed <see cref="UserConfig"/>, or <see cref="Result{T,E}.Err"/> with aggregated <see cref="ConfigDiagnostic"/>s.</item>
 /// </list>
 ///
-/// <para>
-/// The whole pipeline sits behind <see cref="IConfigSource"/> via
-/// <see cref="InProcessConfigSource"/>; PR 3 will swap in an external Rust
-/// validator implementation without touching call sites.
-/// </para>
 /// </summary>
 public static class ConfigLoader
 {
@@ -54,11 +49,8 @@ public static class ConfigLoader
         };
     }
 
-    [System.Diagnostics.CodeAnalysis.RequiresUnreferencedCode(
-        "Tomlyn 2.x's reflection-based TomlSerializer.Deserialize<TomlTable> is the only public API for the untyped DOM. "
-            + "ADR-0010 documents that the TOML loader is opted out of trim/AOT analysis until Tomlyn ships a source-generated TomlTable context."
-    )]
-    [System.Diagnostics.CodeAnalysis.RequiresDynamicCode("Tomlyn 2.x reflection deserialization. See ADR-0010.")]
+    [System.Diagnostics.CodeAnalysis.RequiresUnreferencedCode("Tomlyn reflection deserialization. See ADR-0010.")]
+    [System.Diagnostics.CodeAnalysis.RequiresDynamicCode("Tomlyn reflection deserialization. See ADR-0010.")]
     public static Result<UserConfig, ConfigError> ParseString(string text, string? sourcePath = null)
     {
         ArgumentNullException.ThrowIfNull(text);
