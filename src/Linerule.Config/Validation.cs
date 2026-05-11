@@ -5,10 +5,10 @@ namespace Linerule.Config;
 /// paired with a <see cref="DiagnosticBag"/> of accumulated diagnostics. The
 /// error side is a *monoid* (<see cref="DiagnosticBag.Combine"/>), so several
 /// independent checks can be composed via
-/// <see cref="Validation.Apply2{A,B,C}"/> and related combinators *without*
-/// short-circuiting — both branches run and every diagnostic surfaces, which
-/// is the UX the user expects for config validation (monadic Bind would
-/// report only the first failure).
+/// <see cref="Validation.Apply2{TA,TB,TResult}"/> and related combinators
+/// *without* short-circuiting — both branches run and every diagnostic
+/// surfaces, which is the UX the user expects for config validation (monadic
+/// Bind would report only the first failure).
 ///
 /// <para>
 /// <b>Ok vs. Fail contract</b>: <see cref="IsOk"/> is true when the bag's
@@ -53,10 +53,10 @@ public static class Validation
     /// transforming the value in the Ok case; on Fail the function is not
     /// invoked because <see cref="Fail{T}"/> carries no usable value.
     /// </summary>
-    public static Validation<U> Map<T, U>(this Validation<T> v, Func<T, U> f)
+    public static Validation<TResult> Map<T, TResult>(this Validation<T> v, Func<T, TResult> f)
     {
         ArgumentNullException.ThrowIfNull(f);
-        return v.IsOk ? new Validation<U>(f(v.Value), v.Errors) : new Validation<U>(default!, v.Errors);
+        return v.IsOk ? new Validation<TResult>(f(v.Value), v.Errors) : new Validation<TResult>(default!, v.Errors);
     }
 
     /// <summary>
@@ -65,81 +65,85 @@ public static class Validation
     /// on <c>(a.Value, b.Value)</c> because in the validation flow every
     /// branch supplies a usable fallback even when its bag is fatal.
     /// </summary>
-    public static Validation<C> Apply2<A, B, C>(Validation<A> a, Validation<B> b, Func<A, B, C> f)
+    public static Validation<TResult> Apply2<TA, TB, TResult>(
+        Validation<TA> a,
+        Validation<TB> b,
+        Func<TA, TB, TResult> f
+    )
     {
         ArgumentNullException.ThrowIfNull(f);
         var combined = DiagnosticBag.Combine(a.Errors ?? DiagnosticBag.Empty, b.Errors ?? DiagnosticBag.Empty);
-        return new Validation<C>(f(a.Value, b.Value), combined);
+        return new Validation<TResult>(f(a.Value, b.Value), combined);
     }
 
-    public static Validation<D> Apply3<A, B, C, D>(
-        Validation<A> a,
-        Validation<B> b,
-        Validation<C> c,
-        Func<A, B, C, D> f
+    public static Validation<TResult> Apply3<TA, TB, TC, TResult>(
+        Validation<TA> a,
+        Validation<TB> b,
+        Validation<TC> c,
+        Func<TA, TB, TC, TResult> f
     )
     {
         ArgumentNullException.ThrowIfNull(f);
         var combined = CombineAll(a.Errors, b.Errors, c.Errors);
-        return new Validation<D>(f(a.Value, b.Value, c.Value), combined);
+        return new Validation<TResult>(f(a.Value, b.Value, c.Value), combined);
     }
 
-    public static Validation<E> Apply4<A, B, C, D, E>(
-        Validation<A> a,
-        Validation<B> b,
-        Validation<C> c,
-        Validation<D> d,
-        Func<A, B, C, D, E> f
+    public static Validation<TResult> Apply4<TA, TB, TC, TD, TResult>(
+        Validation<TA> a,
+        Validation<TB> b,
+        Validation<TC> c,
+        Validation<TD> d,
+        Func<TA, TB, TC, TD, TResult> f
     )
     {
         ArgumentNullException.ThrowIfNull(f);
         var combined = CombineAll(a.Errors, b.Errors, c.Errors, d.Errors);
-        return new Validation<E>(f(a.Value, b.Value, c.Value, d.Value), combined);
+        return new Validation<TResult>(f(a.Value, b.Value, c.Value, d.Value), combined);
     }
 
-    public static Validation<F> Apply5<A, B, C, D, E, F>(
-        Validation<A> a,
-        Validation<B> b,
-        Validation<C> c,
-        Validation<D> d,
-        Validation<E> e,
-        Func<A, B, C, D, E, F> f
+    public static Validation<TResult> Apply5<TA, TB, TC, TD, TE, TResult>(
+        Validation<TA> a,
+        Validation<TB> b,
+        Validation<TC> c,
+        Validation<TD> d,
+        Validation<TE> e,
+        Func<TA, TB, TC, TD, TE, TResult> f
     )
     {
         ArgumentNullException.ThrowIfNull(f);
         var combined = CombineAll(a.Errors, b.Errors, c.Errors, d.Errors, e.Errors);
-        return new Validation<F>(f(a.Value, b.Value, c.Value, d.Value, e.Value), combined);
+        return new Validation<TResult>(f(a.Value, b.Value, c.Value, d.Value, e.Value), combined);
     }
 
-    public static Validation<G> Apply6<A, B, C, D, E, F, G>(
-        Validation<A> a,
-        Validation<B> b,
-        Validation<C> c,
-        Validation<D> d,
-        Validation<E> e,
-        Validation<F> ff,
-        Func<A, B, C, D, E, F, G> f
+    public static Validation<TResult> Apply6<TA, TB, TC, TD, TE, TF, TResult>(
+        Validation<TA> a,
+        Validation<TB> b,
+        Validation<TC> c,
+        Validation<TD> d,
+        Validation<TE> e,
+        Validation<TF> ff,
+        Func<TA, TB, TC, TD, TE, TF, TResult> f
     )
     {
         ArgumentNullException.ThrowIfNull(f);
         var combined = CombineAll(a.Errors, b.Errors, c.Errors, d.Errors, e.Errors, ff.Errors);
-        return new Validation<G>(f(a.Value, b.Value, c.Value, d.Value, e.Value, ff.Value), combined);
+        return new Validation<TResult>(f(a.Value, b.Value, c.Value, d.Value, e.Value, ff.Value), combined);
     }
 
-    public static Validation<H> Apply7<A, B, C, D, E, F, G, H>(
-        Validation<A> a,
-        Validation<B> b,
-        Validation<C> c,
-        Validation<D> d,
-        Validation<E> e,
-        Validation<F> ff,
-        Validation<G> gg,
-        Func<A, B, C, D, E, F, G, H> f
+    public static Validation<TResult> Apply7<TA, TB, TC, TD, TE, TF, TG, TResult>(
+        Validation<TA> a,
+        Validation<TB> b,
+        Validation<TC> c,
+        Validation<TD> d,
+        Validation<TE> e,
+        Validation<TF> ff,
+        Validation<TG> gg,
+        Func<TA, TB, TC, TD, TE, TF, TG, TResult> f
     )
     {
         ArgumentNullException.ThrowIfNull(f);
         var combined = CombineAll(a.Errors, b.Errors, c.Errors, d.Errors, e.Errors, ff.Errors, gg.Errors);
-        return new Validation<H>(f(a.Value, b.Value, c.Value, d.Value, e.Value, ff.Value, gg.Value), combined);
+        return new Validation<TResult>(f(a.Value, b.Value, c.Value, d.Value, e.Value, ff.Value, gg.Value), combined);
     }
 
     private static DiagnosticBag CombineAll(params DiagnosticBag?[] bags)
