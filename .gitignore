@@ -49,3 +49,4 @@ CSharpier/
 
 # MCP / editor tooling local state
 .serena/
+.claude/
