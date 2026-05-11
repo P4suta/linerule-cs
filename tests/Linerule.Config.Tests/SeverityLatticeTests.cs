@@ -2,12 +2,6 @@ using Linerule.Config;
 
 namespace Linerule.Config.Tests;
 
-/// <summary>
-/// Algebraic laws of <see cref="SeverityLattice"/>: idempotence, commutativity,
-/// associativity, identity by <see cref="SeverityLattice.Bottom"/>. The carrier
-/// set has only four elements (Hint, Info, Warning, Error), so we exhaust the
-/// 4×4×4 = 64 triples directly instead of pulling in a property framework.
-/// </summary>
 public sealed class SeverityLatticeTests
 {
     public static IEnumerable<TheoryDataRow<DiagnosticSeverity>> Severities() =>

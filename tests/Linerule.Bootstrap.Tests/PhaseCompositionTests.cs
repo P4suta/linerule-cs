@@ -4,12 +4,6 @@ using Linerule.Core;
 
 namespace Linerule.Bootstrap.Tests;
 
-/// <summary>
-/// Algebraic laws of <see cref="Phase{TIn, TOut}"/> as a Kleisli arrow in
-/// the <c>Result&lt;_, BootstrapError&gt;</c> error monad:
-/// associativity of <see cref="PhaseExtensions.Then"/>, left and right
-/// identity (<see cref="Phase.Identity{T}"/>), and short-circuit on Err.
-/// </summary>
 public sealed class PhaseCompositionTests
 {
     private static Phase<int, int> Add(int n) =>

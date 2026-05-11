@@ -12,7 +12,7 @@ public abstract record TickEffect
 {
     private protected TickEffect() { }
 
-    /// <summary>Quit was observed in the hotkey queue: exit the event loop.</summary>
+    /// <summary>Quit was observed in the hotkey queue: leave the event loop.</summary>
     public sealed record Quit : TickEffect
     {
         public static Quit Instance { get; } = new();

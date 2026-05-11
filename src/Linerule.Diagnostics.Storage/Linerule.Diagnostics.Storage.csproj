@@ -1,16 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <!--
-      TargetFramework intentionally matches Linerule.Platform.Windows (net10.0-windows)
-      rather than the aspirational pure net10.0. The plan calls for cross-platform
-      storage, but until ILogSink / LogEntry / LogField / LogContext / JsonFieldWriter
-      are extracted into a sibling `Linerule.Diagnostics` lib, this project must
-      consume them from Linerule.Platform.Windows and therefore inherits its TFM.
-      The implementation itself uses only cross-platform APIs (Microsoft.Data.Sqlite,
-      System.Threading.Channels, System.IO, System.Reflection); the moment the
-      abstractions move, this becomes a one-line TFM drop to net10.0.
-      FOLLOWUP: extract abstractions, then drop "-windows" here.
-    -->
+    <!-- FOLLOWUP: extract Linerule.Diagnostics abstractions to drop -windows here. -->
     <TargetFramework>net10.0-windows10.0.22621.0</TargetFramework>
     <SupportedOSPlatformVersion>10.0.22621.0</SupportedOSPlatformVersion>
     <RootNamespace>Linerule.Diagnostics.Storage</RootNamespace>
@@ -22,33 +12,13 @@
     <AppxGeneratePriEnabled>false</AppxGeneratePriEnabled>
     <EnableDefaultWindowsAppSdkPRIResourceItems>false</EnableDefaultWindowsAppSdkPRIResourceItems>
     <ShouldComputeInputPris>false</ShouldComputeInputPris>
-    <!--
-      AOT-compatible aspirationally (ADR-0010): Microsoft.Data.Sqlite +
-      SQLitePCLRaw ship reflection-free parameter binding for the
-      primitive-value path we use. We do not pull in EF Core. The transitive
-      Linerule.Platform.Windows reference forces IsAotCompatible=false at
-      publish time, but this assembly itself stays AOT-clean.
-    -->
     <IsAotCompatible>true</IsAotCompatible>
-    <!--
-      AllowUnsafeBlocks is here purely to silence CsWinRT1030 on the byte[]
-      blobs we hand to SqliteParameter.Value. No actual unsafe blocks live in
-      this assembly — the analyzer fires because consuming Platform.Windows
-      (net10.0-windows) inherits the WinRT projection ruleset. The moment the
-      abstractions extract per FOLLOWUP, this property goes too.
-    -->
+    <!-- CsWinRT1030 suppression on byte[] blobs; FOLLOWUP: goes away with Linerule.Diagnostics extraction. -->
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
   <ItemGroup>
-    <!--
-      Reverse dependency: we consume ILogSink / LogEntry / LogField /
-      LogContext / JsonFieldWriter from Linerule.Platform.Windows. This
-      direction is suboptimal (storage is cross-platform; the source of the
-      abstractions is Windows-specific). FOLLOWUP: extract those types into a
-      sibling `Linerule.Diagnostics` lib so this project depends on the
-      abstraction, not the implementation.
-    -->
+    <!-- FOLLOWUP: extract ILogSink/LogEntry/etc into Linerule.Diagnostics to fix this reverse dependency. -->
     <ProjectReference Include="..\Linerule.Platform.Windows\Linerule.Platform.Windows.csproj" />
     <ProjectReference Include="..\Linerule.Bootstrap\Linerule.Bootstrap.csproj" />
     <ProjectReference Include="..\Linerule.Config\Linerule.Config.csproj" />
@@ -59,14 +29,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!--
-      schema.sql is the human-readable documentation of the DDL: sqlfluff /
-      sqlite3 CLI / IDE SQL plugins can preview the canonical shape. The
-      authoritative DDL the runtime executes lives as const-string literals
-      inside SqliteSchema.Apply (CA2100 demands literal-at-callsite to
-      prove no user input flows into CommandText). Drift between the two
-      is caught by SchemaTests.Sql_file_matches_inline_statements.
-    -->
+    <!-- schema.sql: human-readable DDL; drift caught by SchemaTests. -->
     <None Include="schema.sql" />
   </ItemGroup>
 

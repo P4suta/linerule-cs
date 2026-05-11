@@ -3,10 +3,6 @@ using Linerule.Core;
 
 namespace Linerule.Config.Tests;
 
-/// <summary>
-/// Coverage for the integrity-layered config pipeline (ADR-0011b):
-/// FileIntegrity → Tomlyn parse → RawConfigDeserializer → Validator → UserConfig.
-/// </summary>
 public sealed class IntegrityPipelineTests
 {
     [Fact]

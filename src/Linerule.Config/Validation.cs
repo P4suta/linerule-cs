@@ -5,10 +5,10 @@ namespace Linerule.Config;
 /// paired with a <see cref="DiagnosticBag"/> of accumulated diagnostics. The
 /// error side is a *monoid* (<see cref="DiagnosticBag.Combine"/>), so several
 /// independent checks can be composed via
-/// <see cref="Validation.Apply2{TA,TB,TResult}"/> and related combinators
-/// *without* short-circuiting — both branches run and every diagnostic
-/// surfaces, which is the UX the user expects for config validation (monadic
-/// Bind would report only the first failure).
+/// <see cref="Validation.Apply2{TA,TB,TResult}"/> and related combinators *without*
+/// short-circuiting — both branches run and every diagnostic surfaces, which
+/// is the UX the user expects for config validation (monadic Bind would
+/// report only the first failure).
 ///
 /// <para>
 /// <b>Ok vs. Fail contract</b>: <see cref="IsOk"/> is true when the bag's

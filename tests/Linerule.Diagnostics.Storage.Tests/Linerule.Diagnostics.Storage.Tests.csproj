@@ -1,23 +1,12 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <!--
-      TargetFramework follows Linerule.Diagnostics.Storage, which itself
-      transitively pulls in Linerule.Platform.Windows for ILogSink /
-      LogEntry / LogContext / JsonFieldWriter (see csproj FOLLOWUP). When
-      those abstractions move to a cross-platform Linerule.Diagnostics
-      sibling, both csprojs drop to plain net10.0 in one edit.
-    -->
+    <!-- FOLLOWUP: drop -windows once Linerule.Diagnostics abstractions extract. -->
     <TargetFramework>net10.0-windows10.0.22621.0</TargetFramework>
     <SupportedOSPlatformVersion>10.0.22621.0</SupportedOSPlatformVersion>
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
     <RootNamespace>Linerule.Diagnostics.Storage.Tests</RootNamespace>
-    <!--
-      The Microsoft.Data.Sqlite path we exercise here (parameterized
-      INSERT statements, no EF Core) is reflection-free, but xunit's test harness
-      and the WindowsAppSDK PRI infra aren't AOT-clean. Tests are never
-      published; opt out of the analyzers that complain about it.
-    -->
+    <!-- Tests never published; opt out of AOT analysis. -->
     <IsAotCompatible>false</IsAotCompatible>
     <UseWinUI>false</UseWinUI>
     <UseWPF>false</UseWPF>

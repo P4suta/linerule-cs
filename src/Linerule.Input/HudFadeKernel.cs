@@ -4,19 +4,9 @@ using Linerule.Core;
 namespace Linerule.Input;
 
 /// <summary>
-/// Pure HUD-opacity fade kernel: a function from
-/// <c>(state, cursor, hudBounds, fadeDecayPx)</c> to the target HUD opacity in
-/// <c>[0, 1]</c>. Extracted from <c>WindowsApp.TickLoop</c> so the geometry +
-/// exponential decay is independent of WinAppSDK / DispatcherQueue — every
-/// edge case (Off mode, hidden overlay, exact overlap, full separation) is
-/// directly property-testable from <c>Linerule.Input.Tests</c>.
-///
-/// <para>
-/// The fade is <c>opacity = 1 − exp(−d/τ)</c> where <c>d</c> is the
-/// axis-aligned gap between the reading-ruler slit and the HUD rectangle and
-/// <c>τ</c> = <c>fadeDecayPx</c>. Smooth in both directions, no flicker
-/// (user request 2026-05-11 「無段階」).
-/// </para>
+/// Pure HUD-opacity fade kernel: <c>(state, cursor, hudBounds, fadeDecayPx) → opacity ∈ [0, 1]</c>.
+/// Fade formula: <c>opacity = 1 − exp(−d/τ)</c> where <c>d</c> is the gap
+/// between the reading-ruler slit and the HUD rectangle and <c>τ = fadeDecayPx</c>.
 /// </summary>
 public static class HudFadeKernel
 {
@@ -38,19 +28,34 @@ public static class HudFadeKernel
         ArgumentNullException.ThrowIfNull(state);
         if (fadeDecayPx <= 0f)
         {
-            // Degenerate decay length — fall back to the "always visible"
-            // limit rather than producing NaN/∞ via division by zero.
-            return 1f;
+            return 1f; // Division by zero guard; degenerate input → fully visible.
         }
         var distance = SlitToHudGap(state, cursor, hud);
         return 1f - MathF.Exp(-distance / fadeDecayPx);
     }
 
     /// <summary>
-    /// Logical-pixel gap between the slit (axis-aligned around
-    /// <paramref name="cursor"/>) and the HUD rectangle along the slit's
-    /// dominant axis. Returns <see cref="float.PositiveInfinity"/> when no
-    /// slit is currently drawn (Off mode or hidden).
+    /// Logical-pixel gap between the cursor's "slit rectangle" and the HUD
+    /// rectangle.
+    ///
+    /// <list type="bullet">
+    ///   <item>
+    ///     <see cref="Mode.Horizontal"/> / <see cref="Mode.Vertical"/> — the
+    ///     slit is an infinite line of width <c>thickness</c> along the
+    ///     orthogonal axis; the gap is the 1-D <see cref="AxisGap"/> along
+    ///     that axis.
+    ///   </item>
+    ///   <item>
+    ///     <see cref="Mode.Off"/> — the cursor is treated as a
+    ///     <c>thickness × thickness</c> point-rect so the HUD fades on cursor
+    ///     proximity. Gap is the 2-D Euclidean distance <c>√(dx² + dy²)</c>
+    ///     between that point-rect and the HUD bounds.
+    ///   </item>
+    /// </list>
+    ///
+    /// Returns <see cref="float.PositiveInfinity"/> only when the overlay is
+    /// fully hidden (<c>state.Visible == false</c>); in that case the HUD
+    /// stays fully opaque because no slit / point-rect is engaged.
     /// </summary>
     public static float SlitToHudGap(State state, Point<Logical> cursor, HudBounds hud)
     {
@@ -60,13 +65,28 @@ public static class HudFadeKernel
             return float.PositiveInfinity;
         }
         var thickness = state.Config.Thickness.Value;
+        var halfT = thickness / 2f;
         return state.Mode switch
         {
-            Mode.Horizontal => AxisGap(cursor.Y - (thickness / 2f), cursor.Y + (thickness / 2f), hud.Top, hud.Bottom),
-            Mode.Vertical => AxisGap(cursor.X - (thickness / 2f), cursor.X + (thickness / 2f), hud.Left, hud.Right),
-            Mode.Off => float.PositiveInfinity,
+            Mode.Horizontal => AxisGap(cursor.Y - halfT, cursor.Y + halfT, hud.Top, hud.Bottom),
+            Mode.Vertical => AxisGap(cursor.X - halfT, cursor.X + halfT, hud.Left, hud.Right),
+            Mode.Off => PointRectDistance(cursor, halfT, hud),
             _ => throw new System.Diagnostics.UnreachableException("unknown overlay mode"),
         };
+    }
+
+    /// <summary>
+    /// 2-D Euclidean distance between an axis-aligned cursor "point rect"
+    /// (a square of half-width <paramref name="half"/> centered on
+    /// <paramref name="cursor"/>) and the HUD rectangle. Returns 0 when the
+    /// rects overlap, otherwise the straight-line gap. Used by
+    /// <see cref="Mode.Off"/> so HUD fade behaves consistently across modes.
+    /// </summary>
+    private static float PointRectDistance(Point<Logical> cursor, float half, HudBounds hud)
+    {
+        var dx = AxisGap(cursor.X - half, cursor.X + half, hud.Left, hud.Right);
+        var dy = AxisGap(cursor.Y - half, cursor.Y + half, hud.Top, hud.Bottom);
+        return MathF.Sqrt((dx * dx) + (dy * dy));
     }
 
     /// <summary>

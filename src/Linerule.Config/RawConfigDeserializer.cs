@@ -219,8 +219,6 @@ internal static class RawConfigDeserializer
             UnknownKeys: UnknownKeys(t, RenderKnown)
         );
 
-    // --- Empty (when section is missing) ---
-
     private static readonly IReadOnlyList<string> NoUnknown = [];
 
     private static RawOverlayConfig EmptyOverlay() =>
@@ -256,8 +254,6 @@ internal static class RawConfigDeserializer
 
     private static RawRenderConfig EmptyRender() =>
         new(WarnRatio: null, FallbackRefreshHz: null, UnknownKeys: NoUnknown);
-
-    // --- Tomlyn DOM accessors ---
 
     private static bool TryGetTable(TomlTable parent, string key, out TomlTable child)
     {

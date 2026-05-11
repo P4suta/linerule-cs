@@ -1,21 +1,11 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <!--
-      WinExe = PE subsystem Windows GUI. No console window allocated on
-      launch, so Windows Explorer double-click goes straight to the overlay
-      with no flashing shell. The CLI sibling (Linerule.Cli) stays Exe / CUI
-      for terminal workflows; both frontends are thin adapters around the
-      shared Linerule.Core / Platform.Windows hexagon.
-    -->
+    <!-- WinExe: no console window on launch; CLI sibling (Linerule.Cli) stays Exe. -->
     <OutputType>WinExe</OutputType>
     <TargetFramework>net10.0-windows10.0.22621.0</TargetFramework>
     <SupportedOSPlatformVersion>10.0.22621.0</SupportedOSPlatformVersion>
     <RootNamespace>Linerule.App</RootNamespace>
-    <!--
-      AssemblyName capital-L deliberately so Linerule.exe (GUI) and
-      linerule.exe (CLI) coexist without filename collision on case-sensitive
-      filesystems.
-    -->
+    <!-- Capital-L: avoids filename collision with linerule.exe (CLI). -->
     <AssemblyName>Linerule</AssemblyName>
     <Description>linerule — reading-ruler overlay GUI launcher (double-click entry).</Description>
     <UseWinUI>false</UseWinUI>

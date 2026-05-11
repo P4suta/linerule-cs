@@ -4,7 +4,6 @@ on:
   push:
     branches: [main]
   pull_request:
-  # Per repo policy `on: schedule` is forbidden — CodeQL is on-demand.
 
 permissions:
   contents: read

@@ -46,3 +46,7 @@ Thumbs.db
 # jj / git
 .jj/
 CSharpier/
+
+# MCP / editor tooling local state
+.serena/
+.claude/

@@ -74,8 +74,6 @@ internal static class Validator
         return bag;
     }
 
-    // ----- Section validators ---------------------------------------------
-
     private static Validation<OverlayConfig> ValidateOverlay(RawOverlayConfig raw, string? source)
     {
         var def = OverlayConfig.Default;

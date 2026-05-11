@@ -5,49 +5,20 @@
     <RootNamespace>Linerule.Platform.Windows</RootNamespace>
     <AssemblyName>Linerule.Platform.Windows</AssemblyName>
     <Description>Windows-specific platform impl: Win32 click-through overlay + Windows.UI.Composition + RegisterHotKey.</Description>
-    <!--
-      UseWinUI=false because the overlay uses Windows.UI.Composition (system,
-      not Microsoft.UI.Composition) via ICompositorDesktopInterop — the
-      PowerToys MouseHighlighter pattern, the canonical click-through
-      transparent overlay path on Windows (see ADR-0009 v3). HUD rendering
-      is Direct2D + DirectWrite directly into a CompositionDrawingSurface
-      via ICompositionDrawingSurfaceInterop; Direct2D / DirectWrite /
-      Direct3D11 / DXGI types are source-gen'd by Microsoft.Windows.CsWin32
-      (see NativeMethods.txt). No Microsoft.Graphics.Win2D dependency.
-    -->
+    <!-- UseWinUI=false: uses Windows.UI.Composition directly; see ADR-0009. -->
     <UseWinUI>false</UseWinUI>
     <UseWPF>false</UseWPF>
     <UseWindowsForms>false</UseWindowsForms>
     <EnableMsixTooling>false</EnableMsixTooling>
     <WindowsAppSdkBootstrapInitialize>false</WindowsAppSdkBootstrapInitialize>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <!--
-      MakePri.exe (resource compiler) is Windows-only x86. Disable every
-      Mrt/Pri-generation knob so the assembly cross-builds in our Linux dev
-      container. We're an unpackaged overlay app — no .pri / app resources
-      needed.
-    -->
+    <!-- MakePri.exe is Windows-only; disable for Linux cross-build. -->
     <AppxGeneratePriEnabled>false</AppxGeneratePriEnabled>
     <EnableDefaultWindowsAppSdkPRIResourceItems>false</EnableDefaultWindowsAppSdkPRIResourceItems>
     <ShouldComputeInputPris>false</ShouldComputeInputPris>
-    <!--
-      The 64-bit Win32 Long-Ptr APIs (GetWindowLongPtrW / SetWindowLongPtrW)
-      are only generatable for an explicit CPU target. Pin to x64 for v0.1;
-      arm64 is added once we're ready to build a multi-RID artifact.
-    -->
+    <!-- GetWindowLongPtrW requires explicit CPU target. -->
     <PlatformTarget>x64</PlatformTarget>
-    <!--
-      ADR-0010: AOT publish is aspirational, not Day-1. The HUD's CsWin32-generated
-      Direct2D / DirectWrite / Direct3D11 P/Invokes use `[MarshalAs(UnmanagedType.IUnknown)] out object`
-      and `[ComImport]` interfaces with runtime COM marshaling — both flag IL2050 / SYSLIB1096
-      under the AOT analyzer. The full Microsoft-pure HUD architecture (ADR-0009 v3) needs
-      this code shape; switching to `[GeneratedComInterface]` everywhere would either require
-      raw-IntPtr marshaling of WinRT projected types (DesktopWindowTarget /
-      CompositionGraphicsDevice) or rewriting CsWin32's generated code. The CLI assembly
-      already opts out (Linerule.Cli.csproj) because System.CommandLine is reflection-heavy.
-      Until ADR-0010 is closed, Platform.Windows opts out too. The pure .NET code paths in
-      Linerule.Core / Linerule.Config remain `IsAotCompatible=true` via Directory.Build.props.
-    -->
+    <!-- CsWin32 COM marshaling (IL2050/SYSLIB1096) blocks AOT; see ADR-0010. -->
     <IsAotCompatible>false</IsAotCompatible>
   </PropertyGroup>
 
@@ -68,12 +39,7 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="Linerule.Platform.Windows.Tests" />
-    <!--
-      Linerule.Diagnostics.Storage reuses JsonFieldWriter (AOT-safe LogField
-      serializer) to avoid a parallel reflection-free serializer. FOLLOWUP:
-      when the abstractions are extracted into Linerule.Diagnostics, this
-      InternalsVisibleTo dissolves.
-    -->
+    <!-- FOLLOWUP: dissolves once Linerule.Diagnostics extracts the abstractions. -->
     <InternalsVisibleTo Include="Linerule.Diagnostics.Storage" />
   </ItemGroup>
 </Project>

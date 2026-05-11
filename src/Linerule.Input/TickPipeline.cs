@@ -4,13 +4,8 @@ namespace Linerule.Input;
 
 /// <summary>
 /// Pure transition: <c>(world, input, telemetryRefreshMs) → (world', effects)</c>.
-/// Mirrors the historical <c>WindowsApp.TickLoop.OnTick</c> body verbatim —
-/// hotkey drain via <see cref="Reduce.Apply"/>, overlay redraw policy based
-/// on state-change OR cursor-move while visible, HUD opacity follow on
-/// cursor moves, and HUD telemetry refresh on a wall-clock cadence — but
-/// expressed without any <c>OverlayWindow</c> / <c>HudVisual</c> /
-/// <c>RenderClock</c> references, so the policy is testable from
-/// <c>Linerule.Input.Tests</c> in isolation.
+/// Hotkey drain, overlay redraw policy, HUD opacity follow, and HUD telemetry
+/// refresh — all without OS references so the policy is unit-testable in isolation.
 /// </summary>
 public static class TickPipeline
 {

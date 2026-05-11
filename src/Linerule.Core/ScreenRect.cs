@@ -14,12 +14,7 @@ public readonly record struct ScreenRect<TSpace>(Point<TSpace> Origin, uint Widt
 
     public int Top => Origin.Y;
 
-    // 64-bit widening + `checked` cast: monitor-pixel rectangles never
-    // come close to int.MaxValue in practice, but a bogus
-    // `ScreenRect(.., Width: uint.MaxValue)` (or a malformed Origin)
-    // would silently wrap a plain `(int)Width` cast. `checked` converts
-    // that into an OverflowException at the boundary instead of
-    // poisoning every downstream geometric calculation.
+    // checked cast: overflow at the boundary rather than silently wrapping into downstream calculations.
     public int Right => checked((int)(Origin.X + (long)Width));
 
     public int Bottom => checked((int)(Origin.Y + (long)Height));

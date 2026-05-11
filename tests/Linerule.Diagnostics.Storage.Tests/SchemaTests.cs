@@ -8,14 +8,6 @@ using Microsoft.Data.Sqlite;
 
 namespace Linerule.Diagnostics.Storage.Tests;
 
-/// <summary>
-/// Schema-shape contract. The migrator is idempotent, every DDL clause is
-/// <c>CREATE … IF NOT EXISTS</c>, so the invariant we pin here is the set
-/// of named objects sqlite_master enumerates after one open. Drift in
-/// <c>schema.sql</c> that drops or renames an index will trip these
-/// before it gets a chance to silently degrade query plans in
-/// production.
-/// </summary>
 public sealed partial class SchemaTests
 {
     [Fact]
