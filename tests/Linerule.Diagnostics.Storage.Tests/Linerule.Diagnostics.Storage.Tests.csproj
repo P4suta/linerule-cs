@@ -1,0 +1,46 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <!--
+      TargetFramework follows Linerule.Diagnostics.Storage, which itself
+      transitively pulls in Linerule.Platform.Windows for ILogSink /
+      LogEntry / LogContext / JsonFieldWriter (see csproj FOLLOWUP). When
+      those abstractions move to a cross-platform Linerule.Diagnostics
+      sibling, both csprojs drop to plain net10.0 in one edit.
+    -->
+    <TargetFramework>net10.0-windows10.0.22621.0</TargetFramework>
+    <SupportedOSPlatformVersion>10.0.22621.0</SupportedOSPlatformVersion>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <RootNamespace>Linerule.Diagnostics.Storage.Tests</RootNamespace>
+    <!--
+      The Microsoft.Data.Sqlite path we exercise here (parameterized
+      INSERT statements, no EF Core) is reflection-free, but xunit's test harness
+      and the WindowsAppSDK PRI infra aren't AOT-clean. Tests are never
+      published; opt out of the analyzers that complain about it.
+    -->
+    <IsAotCompatible>false</IsAotCompatible>
+    <UseWinUI>false</UseWinUI>
+    <UseWPF>false</UseWPF>
+    <UseWindowsForms>false</UseWindowsForms>
+    <AppxGeneratePriEnabled>false</AppxGeneratePriEnabled>
+    <EnableDefaultWindowsAppSdkPRIResourceItems>false</EnableDefaultWindowsAppSdkPRIResourceItems>
+    <ShouldComputeInputPris>false</ShouldComputeInputPris>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Linerule.Diagnostics.Storage\Linerule.Diagnostics.Storage.csproj" />
+    <ProjectReference Include="..\..\src\Linerule.Platform.Windows\Linerule.Platform.Windows.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit.v3" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="Microsoft.Data.Sqlite" />
+    <PackageReference Include="coverlet.collector" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+</Project>

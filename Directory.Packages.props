@@ -26,6 +26,14 @@
     <PackageVersion Include="System.CommandLine" Version="2.0.7" />
     <PackageVersion Include="Spectre.Console" Version="0.55.2" />
     <PackageVersion Include="Tomlyn" Version="2.3.2" />
+    <!--
+      Microsoft.Data.Sqlite tracks the .NET runtime release cadence; 10.0.7
+      is the latest 10.x stable as of 2026-04-21 (matches global.json's net10
+      SDK band). Backend is SQLitePCLRaw with the bundled `e_sqlite3` native
+      asset — reflection-free at the layer we use (no EF Core), so the AOT
+      analyzer stays happy. See PR 2 plan / ADR-0012.
+    -->
+    <PackageVersion Include="Microsoft.Data.Sqlite" Version="10.0.7" />
   </ItemGroup>
 
   <ItemGroup Label="Test">

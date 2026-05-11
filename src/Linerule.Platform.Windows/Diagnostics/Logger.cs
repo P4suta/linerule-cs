@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
-using System.IO;
 using System.Threading;
 using Linerule.Platform.Windows.Diagnostics.Sinks;
 
@@ -9,8 +8,8 @@ namespace Linerule.Platform.Windows.Diagnostics;
 
 /// <summary>
 /// Static facade over the diagnostic <see cref="LogPipeline"/>. Owns the
-/// process-wide singletons (pipeline, ring buffer, file path, RunId) and
-/// hands out subsystem-bound <see cref="LoggerHandle"/>s via
+/// process-wide singletons (pipeline, ring buffer, file-sink handle, RunId)
+/// and hands out subsystem-bound <see cref="LoggerHandle"/>s via
 /// <see cref="For"/>.
 ///
 /// <para>
@@ -19,10 +18,11 @@ namespace Linerule.Platform.Windows.Diagnostics;
 /// </para>
 ///
 /// <code>
-/// Logger.Initialize();             // create pipeline + sinks
-/// CrashDump.Install();             // wire UnhandledException → dump
+/// using var sink = new SqliteEventSink(SqlitePath.DefaultPath(), RunMetadata.Capture(argv));
+/// Logger.Initialize(fileSink: sink); // create pipeline + sinks
+/// CrashDump.Install();               // wire UnhandledException → dump
 /// // ... actual work ...
-/// Logger.Shutdown();               // flush + dispose sinks
+/// Logger.Shutdown();                 // flush + dispose sinks
 /// </code>
 ///
 /// <para>
@@ -35,18 +35,13 @@ public static class Logger
 {
     private static LogPipeline? _pipeline;
     private static RingBufferSink? _ringBuffer;
-    private static JsonlFileSink? _jsonlSink;
-    private static string? _logPath;
+    private static string? _dbPath;
     private static int _initialized;
 
     /// <summary>
     /// Set up the global pipeline. Idempotent — second call returns the
     /// existing pipeline (does not re-initialize).
     /// </summary>
-    /// <param name="logPath">
-    /// Override the JSONL output path. Default:
-    /// <c>%TEMP%\linerule.jsonl</c>.
-    /// </param>
     /// <param name="ringCapacity">
     /// Ring-buffer depth for crash-dump replay. Default 200.
     /// </param>
@@ -56,30 +51,34 @@ public static class Logger
     /// Default: <see cref="LogLevel.Debug"/> in Debug builds,
     /// <see cref="LogLevel.Info"/> in Release.
     /// </param>
-    public static void Initialize(string? logPath = null, int ringCapacity = 200, LogLevel? defaultLevel = null)
+    /// <param name="fileSink">
+    /// Optional persistent sink (e.g. <c>SqliteEventSink</c>). When
+    /// <see langword="null"/>, the pipeline runs with the in-memory
+    /// breadcrumb ring + stdout only — useful for tests and bootstrap
+    /// failure modes where opening a DB would itself fail. Lifetime is
+    /// the caller's: pass via <c>using var sink = …</c> from
+    /// <c>Linerule.Cli.Program</c>.
+    /// </param>
+    public static void Initialize(int ringCapacity = 200, LogLevel? defaultLevel = null, ILogSink? fileSink = null)
     {
         if (Interlocked.Exchange(ref _initialized, 1) != 0)
         {
             return;
         }
 
-        var path = logPath ?? Path.Combine(Path.GetTempPath(), "linerule.jsonl");
         var spec = Environment.GetEnvironmentVariable("LINERULE_LOG");
-        var append = ParseBoolEnv("LINERULE_LOG_APPEND", defaultValue: false);
         var fallback = defaultLevel ?? BuildConfigDefaultLevel();
         var (perSubsystem, effectiveDefault) = LogPipeline.ParseFilterSpec(spec, fallback);
 
         var ring = new RingBufferSink(ringCapacity);
-        var jsonl = new JsonlFileSink(path, append);
         var stdout = new StdoutSink();
 
-        var sinks = ImmutableArray.Create<ILogSink>(stdout, jsonl, ring);
+        var sinks = fileSink is null ? [stdout, ring] : ImmutableArray.Create<ILogSink>(stdout, fileSink, ring);
         var pipeline = new LogPipeline(sinks, perSubsystem, effectiveDefault, Guid.NewGuid());
 
         _pipeline = pipeline;
         _ringBuffer = ring;
-        _jsonlSink = jsonl;
-        _logPath = path;
+        _dbPath = ExtractPath(fileSink);
 
         AppDomain.CurrentDomain.ProcessExit += static (_, _) => Shutdown();
 
@@ -87,8 +86,7 @@ public static class Logger
         bootstrap.Info(
             "initialized",
             new LogField("run_id", pipeline.RunId.ToString("D")),
-            new LogField("jsonl", path),
-            new LogField("jsonl_mode", append ? "append" : "truncate"),
+            new LogField("db", _dbPath ?? string.Empty),
             new LogField("default_level", effectiveDefault),
             new LogField("build_config", BuildConfigName()),
             new LogField("subsystem_overrides", spec ?? string.Empty)
@@ -96,25 +94,28 @@ public static class Logger
     }
 
     /// <summary>
-    /// Parse a boolean env var. Recognizes <c>1 / true / yes / on</c> as
-    /// true, anything else (including unset) as <paramref name="defaultValue"/>.
+    /// Best-effort discovery of a sink's on-disk path. Sinks that expose a
+    /// public <c>Path</c> property (e.g. <c>SqliteEventSink</c>) get
+    /// surfaced in the bootstrap banner; opaque sinks emit an empty string.
+    /// Reflection here is acceptable: bootstrap-once, not a hot path,
+    /// and the property name is a stable convention enforced by code review.
     /// </summary>
-    private static bool ParseBoolEnv(string name, bool defaultValue)
+    private static string? ExtractPath(ILogSink? sink)
     {
-        var raw = Environment.GetEnvironmentVariable(name);
-        return string.IsNullOrEmpty(raw)
-            ? defaultValue
-            : raw.Trim().ToLowerInvariant() switch
-            {
-                "1" or "true" or "yes" or "on" => true,
-                "0" or "false" or "no" or "off" => false,
-                _ => defaultValue,
-            };
+        if (sink is null)
+        {
+            return null;
+        }
+        var prop = sink.GetType().GetProperty("Path");
+        return prop?.GetValue(sink) as string;
     }
 
     /// <summary>
-    /// Tear down: flush all sinks, dispose the JSONL file. Idempotent.
-    /// Called automatically on <see cref="AppDomain.ProcessExit"/>.
+    /// Tear down: flush all sinks. The file sink itself is owned by the
+    /// caller (typically a <c>using var</c> in <c>Linerule.Cli.Program</c>)
+    /// and gets disposed when its scope exits — Logger never disposes
+    /// what it does not own. Idempotent; called automatically on
+    /// <see cref="AppDomain.ProcessExit"/>.
     /// </summary>
     public static void Shutdown()
     {
@@ -130,18 +131,9 @@ public static class Logger
         {
             // see LogPipeline.Emit — never propagate from logger internals
         }
-        try
-        {
-            _jsonlSink?.Dispose();
-        }
-        catch
-        {
-            // ditto
-        }
         _pipeline = null;
         _ringBuffer = null;
-        _jsonlSink = null;
-        _logPath = null;
+        _dbPath = null;
     }
 
     /// <summary>
@@ -159,8 +151,8 @@ public static class Logger
         return new LoggerHandle(p, subsystem);
     }
 
-    /// <summary>JSONL file path. Surfaces in startup banner so the user can find it.</summary>
-    public static string LogPath => _logPath ?? string.Empty;
+    /// <summary>Persistent event-store path. Surfaces in startup banner so the user can find it.</summary>
+    public static string DbPath => _dbPath ?? string.Empty;
 
     /// <summary>Process-wide RunId. Stamps every entry's <c>ctx.run_id</c>.</summary>
     public static Guid RunId => _pipeline?.RunId ?? Guid.Empty;

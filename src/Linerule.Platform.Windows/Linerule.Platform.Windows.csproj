@@ -67,5 +67,12 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="Linerule.Platform.Windows.Tests" />
+    <!--
+      Linerule.Diagnostics.Storage reuses JsonFieldWriter (AOT-safe LogField
+      serializer) to avoid a parallel reflection-free serializer. FOLLOWUP:
+      when the abstractions are extracted into Linerule.Diagnostics, this
+      InternalsVisibleTo dissolves.
+    -->
+    <InternalsVisibleTo Include="Linerule.Diagnostics.Storage" />
   </ItemGroup>
 </Project>

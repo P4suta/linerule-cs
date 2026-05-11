@@ -116,6 +116,11 @@ internal static class StrictCodeCommand
                 new Regex(@"\bActivator\.CreateInstance\s*\(\s*typeof", BaseOptions, PatternTimeout),
                 "Trim/AOT unsafe; use a typed factory."
             ),
+            new(
+                "ban-sql-interpolation",
+                new Regex("CommandText\\s*=\\s*\\$\"", BaseOptions, PatternTimeout),
+                "Interpolated SQL is an injection vector — bind via DbCommand.Parameters or use static SQL with placeholders."
+            ),
         ];
 
     private static IEnumerable<string> EnumerateSources(string root)

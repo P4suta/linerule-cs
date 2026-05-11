@@ -84,3 +84,39 @@ Every action is SHA-pinned (memory: `feedback_prefer_latest_not_pinning`); Depen
 - `docs/adr/0009-transparency-via-dcomp.md` — counter-ADR to Rust 0009 (no color-key)
 - `docs/adr/0008-ci-strategy.md` — CI job topology + SHA-pin policy
 - `docs/adr/0005-build-environment-exception.md` — Docker-first build; Windows is a runtime exception
+- `docs/adr/0012-sqlite-writer-only-event-store.md` — `events.sqlite` is the contract; analysis is external
+
+## Analyzing the event log
+
+The overlay writes structured events to a single SQLite database at
+`%APPDATA%\linerule\events.sqlite` (WAL mode, multi-reader-safe — you can
+query while the overlay is running). The binary itself ships no analysis
+CLI; the file is the API. See ADR-0012 for the rationale.
+
+**DuckDB (recommended for ad-hoc queries).** DuckDB reads SQLite
+natively, gives you proper SQL + columnar speed, and is the canonical
+"open this file and start asking questions" tool:
+
+```sh
+duckdb -c "
+  INSTALL sqlite; LOAD sqlite;
+  ATTACH '$APPDATA/linerule/events.sqlite' AS db (TYPE sqlite);
+  SELECT subsystem, level, COUNT(*) AS n
+  FROM db.events
+  WHERE run_id = (SELECT run_id FROM db.runs ORDER BY started_at_utc DESC LIMIT 1)
+  GROUP BY subsystem, level
+  ORDER BY n DESC;
+"
+```
+
+**sqlite3 (one-liner, no install if you have the OS package).**
+
+```sh
+sqlite3 "$APPDATA/linerule/events.sqlite" \
+  "SELECT ts, subsystem, step FROM events ORDER BY ts DESC LIMIT 20;"
+```
+
+**Or just open it.** The file is plain SQLite — DBeaver, TablePlus,
+DataGrip, your IDE's SQLite preview, and Python's stdlib `sqlite3` all
+open it without setup. Find runs that crashed mid-flight with
+`SELECT run_id, started_at_utc FROM runs WHERE ended_at_utc IS NULL;`.
