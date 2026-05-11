@@ -48,13 +48,19 @@ namespace Linerule.Platform.Windows;
 /// </summary>
 public sealed class OverlayWindow : IOverlaySurface
 {
-    private static readonly LoggerHandle Log = Logger.For(Subsystems.OverlayWindow);
-    private static readonly LoggerHandle WndProcLog = Logger.For(Subsystems.WndProc);
-
     private const string ClassName = "linerule-cs-overlay";
 
     private static WNDPROC? _wndProcKeepAlive;
 
+    /// <summary>
+    /// WndProc log handle, assigned on the first <see cref="Create"/> call.
+    /// The static Win32 callback <see cref="OverlayWndProc"/> has no instance
+    /// reference (it serves the class, not a single HWND), so the logger has
+    /// to live on a static field. Composition root threads it in once.
+    /// </summary>
+    private static LoggerHandle? _wndProcLog;
+
+    private readonly LoggerHandle _log;
     private readonly HWND _hwnd;
     private readonly DesktopWindowTarget _target;
     private readonly ContainerVisual _root;
@@ -96,10 +102,12 @@ public sealed class OverlayWindow : IOverlaySurface
         Compositor compositor,
         DesktopWindowTarget target,
         ContainerVisual root,
-        ScreenRect<Logical> monitor
+        ScreenRect<Logical> monitor,
+        LoggerHandle log
     )
     {
         _hwnd = hwnd;
+        _log = log;
         Compositor = compositor;
         _target = target;
         _root = root;
@@ -120,32 +128,42 @@ public sealed class OverlayWindow : IOverlaySurface
         MonitorBounds = monitor;
     }
 
-    public static OverlayWindow Create(ScreenRect<Logical> monitor, DispatcherQueue queue)
+    public static OverlayWindow Create(ScreenRect<Logical> monitor, DispatcherQueue queue, LoggerRoot logger)
     {
         ArgumentNullException.ThrowIfNull(queue);
-        Log.Info("create begin", new LogField("monitor_w", monitor.Width), new LogField("monitor_h", monitor.Height));
+        ArgumentNullException.ThrowIfNull(logger);
 
-        EnsureWindowClassRegistered();
-        Log.Debug("window class registered", new LogField("class", ClassName));
+        var log = logger.For(Subsystems.OverlayWindow);
+        var wndProcLog = logger.For(Subsystems.WndProc);
+        var compLog = logger.For(Subsystems.Composition);
 
-        var hwnd = CreateHwnd(monitor);
-        Log.Info("CreateWindowExW ok", new LogField("hwnd", HexHwnd(hwnd)));
-        ExStyleSnapshot.Capture(hwnd, "after CreateWindowExW", Log);
+        // Stash the WndProc log so the static OverlayWndProc callback can
+        // emit through it without an instance pointer.
+        _wndProcLog = wndProcLog;
 
-        var (compositor, target, root) = AttachDesktopWindowTarget(hwnd);
-        ExStyleSnapshot.Capture(hwnd, "after CreateDesktopWindowTarget", Log);
+        log.Info("create begin", new LogField("monitor_w", monitor.Width), new LogField("monitor_h", monitor.Height));
+
+        EnsureWindowClassRegistered(log);
+        log.Debug("window class registered", new LogField("class", ClassName));
+
+        var hwnd = CreateHwnd(monitor, log);
+        log.Info("CreateWindowExW ok", new LogField("hwnd", HexHwnd(hwnd)));
+        ExStyleSnapshot.Capture(hwnd, "after CreateWindowExW", log);
+
+        var (compositor, target, root) = AttachDesktopWindowTarget(hwnd, compLog);
+        ExStyleSnapshot.Capture(hwnd, "after CreateDesktopWindowTarget", log);
 
         // ShowWindow's BOOL return is the previous show state, not a success
         // flag — go through CheckLastError so we only warn on a real fault.
         _ = PInvoke.ShowWindow(hwnd, SHOW_WINDOW_CMD.SW_SHOWNOACTIVATE);
-        Win32Guard.CheckLastError("ShowWindow(SW_SHOWNOACTIVATE)", Log);
-        Log.Info("ShowWindow ok — overlay live");
-        ExStyleSnapshot.Capture(hwnd, "after ShowWindow", Log);
+        Win32Guard.CheckLastError("ShowWindow(SW_SHOWNOACTIVATE)", log);
+        log.Info("ShowWindow ok — overlay live");
+        ExStyleSnapshot.Capture(hwnd, "after ShowWindow", log);
 
-        return new OverlayWindow(hwnd, compositor, target, root, monitor);
+        return new OverlayWindow(hwnd, compositor, target, root, monitor, log);
     }
 
-    private static unsafe HWND CreateHwnd(ScreenRect<Logical> monitor)
+    private static unsafe HWND CreateHwnd(ScreenRect<Logical> monitor, LoggerHandle log)
     {
         // Click-through + per-pixel alpha pairing (ADR-0009 v3, PowerToys
         // MouseHighlighter pattern):
@@ -198,7 +216,7 @@ public sealed class OverlayWindow : IOverlaySurface
                         lpParam: null
                     ),
                     "CreateWindowExW overlay",
-                    Log
+                    log
                 );
             }
         }
@@ -208,10 +226,8 @@ public sealed class OverlayWindow : IOverlaySurface
         Compositor Compositor,
         DesktopWindowTarget Target,
         ContainerVisual Root
-    ) AttachDesktopWindowTarget(HWND hwnd)
+    ) AttachDesktopWindowTarget(HWND hwnd, LoggerHandle compLog)
     {
-        var compLog = Logger.For(Subsystems.Composition);
-
         // `new Compositor()` requires a Windows.System.DispatcherQueue on
         // the calling thread (RPC_E_WRONG_THREAD otherwise). Microsoft.UI's
         // lifted dispatcher does NOT satisfy this — they're independent
@@ -258,14 +274,14 @@ public sealed class OverlayWindow : IOverlaySurface
             return ValueTask.CompletedTask;
         }
 
-        Log.Info("dispose begin");
+        _log.Info("dispose begin");
         _foregroundLayer.Dispose();
         _backgroundLayer.Dispose();
         _target.Dispose();
         Compositor.Dispose();
-        Win32Guard.Check(PInvoke.DestroyWindow(_hwnd), "DestroyWindow overlay", Log);
+        Win32Guard.Check(PInvoke.DestroyWindow(_hwnd), "DestroyWindow overlay", _log);
         _disposed = true;
-        Log.Info("dispose ok");
+        _log.Info("dispose ok");
         return ValueTask.CompletedTask;
     }
 
@@ -288,11 +304,11 @@ public sealed class OverlayWindow : IOverlaySurface
                     | SET_WINDOW_POS_FLAGS.SWP_NOACTIVATE
             ),
             "SetWindowPos(HWND_TOPMOST)",
-            Log
+            _log
         );
     }
 
-    private static unsafe void EnsureWindowClassRegistered()
+    private static unsafe void EnsureWindowClassRegistered(LoggerHandle log)
     {
         if (_wndProcKeepAlive is not null)
         {
@@ -314,7 +330,7 @@ public sealed class OverlayWindow : IOverlaySurface
                 lpszClassName = className,
             };
 
-            Win32Guard.CheckOrThrow(PInvoke.RegisterClassEx(in wc) != 0, "RegisterClassExW overlay", Log);
+            Win32Guard.CheckOrThrow(PInvoke.RegisterClassEx(in wc) != 0, "RegisterClassExW overlay", log);
         }
     }
 
@@ -340,19 +356,24 @@ public sealed class OverlayWindow : IOverlaySurface
     /// </summary>
     private static LRESULT OverlayWndProc(HWND hwnd, uint msg, WPARAM wParam, LPARAM lParam)
     {
+        // _wndProcLog is assigned on first Create() before the window class
+        // is registered, so by the time any WM_* arrives at this callback it
+        // is non-null. Local capture avoids re-reading the static for every
+        // field write.
+        var log = _wndProcLog;
         if (msg == WM_NCHITTEST)
         {
             var n = Interlocked.Increment(ref _nchitCount);
-            if (WndProcLog.IsEnabled(LogLevel.Trace) && (n <= 3 || n % 200 == 0))
+            if (log is { } l && l.IsEnabled(LogLevel.Trace) && (n <= 3 || n % 200 == 0))
             {
-                WndProcLog.Trace("WM_NCHITTEST → HTTRANSPARENT", new LogField("count", n));
+                l.Trace("WM_NCHITTEST → HTTRANSPARENT", new LogField("count", n));
             }
             return new LRESULT(HTTRANSPARENT);
         }
         if (msg is WM_LBUTTONDOWN or WM_RBUTTONDOWN or WM_MBUTTONDOWN)
         {
             var n = Interlocked.Increment(ref _clickCount);
-            WndProcLog.Warn(
+            log?.Warn(
                 "click reached overlay (click-through failed)",
                 new LogField("msg", $"0x{msg:X4}"),
                 new LogField("count", n)

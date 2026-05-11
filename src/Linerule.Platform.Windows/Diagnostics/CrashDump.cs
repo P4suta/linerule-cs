@@ -41,20 +41,23 @@ public static class CrashDump
     private static int _installed;
     private static Func<LogField[]>? _stateSnapshot;
     private static LoggerHandle? _log;
+    private static LoggerRoot? _root;
 
     /// <summary>
     /// Wire <see cref="AppDomain.UnhandledException"/>,
     /// <see cref="TaskScheduler.UnobservedTaskException"/>, and
     /// <see cref="AppDomain.ProcessExit"/>. Idempotent.
     /// </summary>
-    public static void Install()
+    public static void Install(LoggerRoot root)
     {
+        ArgumentNullException.ThrowIfNull(root);
         if (Interlocked.Exchange(ref _installed, 1) != 0)
         {
             return;
         }
 
-        _log = Logger.For(Subsystems.CrashDump);
+        _root = root;
+        _log = root.For(Subsystems.CrashDump);
 
         AppDomain.CurrentDomain.UnhandledException += OnUnhandled;
         TaskScheduler.UnobservedTaskException += OnUnobserved;
@@ -63,7 +66,7 @@ public static class CrashDump
         _log.Info(
             "installed",
             new LogField("dump_dir", Path.GetTempPath()),
-            new LogField("ring_capacity", Logger.RingCapacity)
+            new LogField("ring_capacity", root.RingCapacity)
         );
     }
 
@@ -137,7 +140,7 @@ public static class CrashDump
         var path = Path.Combine(Path.GetTempPath(), name);
 
         var lastWin32 = Marshal.GetLastWin32Error();
-        var entries = Logger.RecentEntries();
+        var entries = _root?.RecentEntries() ?? [];
         var stateFields = SafeStateSnapshot();
 
         using var stream = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.Read);
@@ -173,7 +176,7 @@ public static class CrashDump
         w.WriteString("trigger", trigger);
         w.WriteString("timestamp", stamp.ToString("O", CultureInfo.InvariantCulture));
         w.WriteBoolean("terminating", terminating);
-        w.WriteString("run_id", Logger.RunId.ToString("D"));
+        w.WriteString("run_id", (_root?.RunId ?? Guid.Empty).ToString("D"));
         w.WriteNumber("last_win32_error", lastWin32);
         w.WriteString("last_win32_error_name", Win32Guard.DecodeName(lastWin32));
     }

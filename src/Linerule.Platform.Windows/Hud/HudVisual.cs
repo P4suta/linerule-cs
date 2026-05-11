@@ -26,7 +26,7 @@ namespace Linerule.Platform.Windows.Hud;
 /// </summary>
 internal sealed partial class HudVisual : IDisposable
 {
-    private static readonly LoggerHandle Log = Logger.For(Subsystems.Hud);
+    private readonly LoggerHandle _log;
 
     /// <summary>
     /// Floor on the HUD redraw cadence. The D2D + DirectWrite path
@@ -65,15 +65,22 @@ internal sealed partial class HudVisual : IDisposable
     /// <summary>HUD rectangle in HWND-pixel space.</summary>
     public HudLayout Layout => _layout;
 
-    public HudVisual(Compositor compositor, ContainerVisual parent, HudLayout layout, HudConfig hudCfg)
+    public HudVisual(
+        Compositor compositor,
+        ContainerVisual parent,
+        HudLayout layout,
+        HudConfig hudCfg,
+        LoggerHandle log
+    )
     {
         ArgumentNullException.ThrowIfNull(compositor);
         ArgumentNullException.ThrowIfNull(parent);
         ArgumentNullException.ThrowIfNull(hudCfg);
+        _log = log;
         _parent = parent;
         _layout = layout;
         _baseOpacity = hudCfg.BaseOpacity;
-        _renderer = new HudRenderer(compositor, layout, hudCfg);
+        _renderer = new HudRenderer(compositor, layout, hudCfg, log);
         _brush = compositor.CreateSurfaceBrush(_renderer.Surface);
         _visual = compositor.CreateSpriteVisual();
         _visual.Brush = _brush;
@@ -81,7 +88,7 @@ internal sealed partial class HudVisual : IDisposable
         _visual.Size = layout.SizePx;
         _visual.Opacity = _baseOpacity;
         _parent.Children.InsertAtTop(_visual);
-        Log.Info(
+        _log.Info(
             "HUD visual attached",
             new LogField("offset_x", layout.PositionPx.X),
             new LogField("offset_y", layout.PositionPx.Y),
@@ -173,7 +180,11 @@ internal sealed partial class HudVisual : IDisposable
         }
         catch (Exception ex)
         {
-            Log.Warn("HUD parent.Remove threw", new LogField("ex", ex.GetType().Name), new LogField("msg", ex.Message));
+            _log.Warn(
+                "HUD parent.Remove threw",
+                new LogField("ex", ex.GetType().Name),
+                new LogField("msg", ex.Message)
+            );
         }
         _visual.Dispose();
         _brush.Dispose();

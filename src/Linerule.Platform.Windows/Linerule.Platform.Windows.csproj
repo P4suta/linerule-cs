@@ -55,6 +55,7 @@
     <ProjectReference Include="..\Linerule.Core\Linerule.Core.csproj" />
     <ProjectReference Include="..\Linerule.Config\Linerule.Config.csproj" />
     <ProjectReference Include="..\Linerule.Platform\Linerule.Platform.csproj" />
+    <ProjectReference Include="..\Linerule.Input\Linerule.Input.csproj" />
   </ItemGroup>
 
   <ItemGroup>

@@ -209,7 +209,7 @@ public sealed partial class SchemaTests
         // so the source file is four levels up + into src/. We walk up
         // until we find the repo root marker so the test is resilient to
         // small layout shifts.
-        var dir = AppContext.BaseDirectory;
+        var dir = System.AppContext.BaseDirectory;
         for (var i = 0; i < 10 && dir is not null; i++)
         {
             var candidate = Path.Combine(dir, "src", "Linerule.Diagnostics.Storage", "schema.sql");
@@ -221,7 +221,7 @@ public sealed partial class SchemaTests
         }
         throw new FileNotFoundException(
             "Could not locate src/Linerule.Diagnostics.Storage/schema.sql by walking up from "
-                + AppContext.BaseDirectory
+                + System.AppContext.BaseDirectory
         );
     }
 

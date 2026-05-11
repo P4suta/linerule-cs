@@ -50,6 +50,8 @@
       abstraction, not the implementation.
     -->
     <ProjectReference Include="..\Linerule.Platform.Windows\Linerule.Platform.Windows.csproj" />
+    <ProjectReference Include="..\Linerule.Bootstrap\Linerule.Bootstrap.csproj" />
+    <ProjectReference Include="..\Linerule.Config\Linerule.Config.csproj" />
   </ItemGroup>
 
   <ItemGroup>

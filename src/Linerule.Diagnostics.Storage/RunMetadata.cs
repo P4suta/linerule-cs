@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Reflection;
 using System.Runtime.InteropServices;
-using Linerule.Platform.Windows.Diagnostics;
 
 namespace Linerule.Diagnostics.Storage;
 
@@ -55,7 +54,7 @@ public sealed record RunMetadata(
         var asm = typeof(RunMetadata).GetTypeInfo().Assembly;
 
         return new RunMetadata(
-            RunId: Logger.RunId == Guid.Empty ? Guid.NewGuid() : Logger.RunId,
+            RunId: Guid.NewGuid(),
             StartedAt: time.GetUtcNow(),
             Version: ReadAssemblyVersion(asm),
             BuildConfig: ReadBuildConfig(),

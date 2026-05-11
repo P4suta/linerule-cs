@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Linerule.Bootstrap</RootNamespace>
+    <AssemblyName>Linerule.Bootstrap</AssemblyName>
+    <Description>Composition root expressed as a typed Phase DAG (Kleisli arrows over Result&lt;T, BootstrapError&gt;). Each phase emits a capability token (SqliteOpened, LoggerLive, …) that the next phase requires by type — wrong-order composition is a compile error, not a runtime drift.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Linerule.Core\Linerule.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Linerule.Bootstrap.Tests" />
+  </ItemGroup>
+</Project>

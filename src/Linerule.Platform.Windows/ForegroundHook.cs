@@ -13,8 +13,6 @@ namespace Linerule.Platform.Windows;
 /// </summary>
 public sealed partial class ForegroundHook : IDisposable
 {
-    private static readonly LoggerHandle Log = Logger.For(Subsystems.ForegroundHook);
-
     private const uint EVENT_SYSTEM_FOREGROUND = 0x0003;
     private const uint WINEVENT_OUTOFCONTEXT = 0x0000;
     private const uint WINEVENT_SKIPOWNPROCESS = 0x0002;
@@ -25,12 +23,14 @@ public sealed partial class ForegroundHook : IDisposable
     private readonly WinEventProc _callback;
     private readonly IntPtr _hookHandle;
     private readonly Action _onForegroundChanged;
+    private readonly LoggerHandle _log;
     private bool _disposed;
 
-    public ForegroundHook(Action onForegroundChanged)
+    public ForegroundHook(Action onForegroundChanged, LoggerHandle log)
     {
         ArgumentNullException.ThrowIfNull(onForegroundChanged);
         _onForegroundChanged = onForegroundChanged;
+        _log = log;
         _callback = OnEvent;
         _hookHandle = NativeBridge.SetWinEventHook(
             EVENT_SYSTEM_FOREGROUND,
@@ -45,7 +45,7 @@ public sealed partial class ForegroundHook : IDisposable
         if (_hookHandle == IntPtr.Zero)
         {
             var (err, name) = Win32Guard.LastError();
-            Log.Warn(
+            _log.Warn(
                 "SetWinEventHook failed — topmost re-assertion disabled",
                 new LogField("err", err),
                 new LogField("err_name", name)
@@ -53,7 +53,7 @@ public sealed partial class ForegroundHook : IDisposable
         }
         else
         {
-            Log.Debug(
+            _log.Debug(
                 "SetWinEventHook ok",
                 new LogField("hook", string.Create(CultureInfo.InvariantCulture, $"0x{_hookHandle:X}"))
             );
@@ -76,7 +76,7 @@ public sealed partial class ForegroundHook : IDisposable
         if (_hookHandle != IntPtr.Zero && !NativeBridge.UnhookWinEvent(_hookHandle))
         {
             var (err, name) = Win32Guard.LastError();
-            Log.Warn("UnhookWinEvent failed", new LogField("err", err), new LogField("err_name", name));
+            _log.Warn("UnhookWinEvent failed", new LogField("err", err), new LogField("err_name", name));
         }
         _disposed = true;
     }
@@ -99,7 +99,7 @@ public sealed partial class ForegroundHook : IDisposable
         {
             // The OS owns this thread — letting the exception escape kills
             // the message pump for the entire app.
-            Log.Error("foreground callback threw", ex);
+            _log.Error("foreground callback threw", ex);
         }
     }
 

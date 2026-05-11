@@ -22,10 +22,9 @@ namespace Linerule.Platform.Windows;
 /// tag to <c>HwndPx</c> is a pipeline-wide follow-up.
 /// </para>
 /// </summary>
-public sealed partial class CursorTracker : IMouseTracker
+public sealed partial class CursorTracker(LoggerHandle log) : IMouseTracker
 {
-    private static readonly LoggerHandle Log = Logger.For(Subsystems.CursorTracker);
-
+    private readonly LoggerHandle _log = log;
     private int _failureCount;
 
     public Point<Logical>? Poll()
@@ -38,7 +37,7 @@ public sealed partial class CursorTracker : IMouseTracker
             if (n == 1 || n % 1000 == 0)
             {
                 var (err, name) = Win32Guard.LastError();
-                Log.Warn(
+                _log.Warn(
                     "GetCursorPos failed",
                     new LogField("count", n),
                     new LogField("err", err),
@@ -50,7 +49,7 @@ public sealed partial class CursorTracker : IMouseTracker
 
         if (_failureCount > 0)
         {
-            Log.Info("GetCursorPos recovered", new LogField("prior_failures", _failureCount));
+            _log.Info("GetCursorPos recovered", new LogField("prior_failures", _failureCount));
             _failureCount = 0;
         }
 

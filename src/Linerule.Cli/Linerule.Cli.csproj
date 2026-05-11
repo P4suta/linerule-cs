@@ -29,6 +29,8 @@
     <ProjectReference Include="..\Linerule.Platform\Linerule.Platform.csproj" />
     <ProjectReference Include="..\Linerule.Platform.Windows\Linerule.Platform.Windows.csproj" />
     <ProjectReference Include="..\Linerule.Diagnostics.Storage\Linerule.Diagnostics.Storage.csproj" />
+    <ProjectReference Include="..\Linerule.Diagnostics\Linerule.Diagnostics.csproj" />
+    <ProjectReference Include="..\Linerule.Bootstrap\Linerule.Bootstrap.csproj" />
   </ItemGroup>
 
   <ItemGroup>

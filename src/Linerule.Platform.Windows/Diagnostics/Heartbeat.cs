@@ -28,10 +28,10 @@ public sealed partial class Heartbeat : IDisposable
 
     public TimeSpan Interval { get; }
 
-    public Heartbeat(Func<LogField[]> snapshot, TimeSpan? interval = null)
+    public Heartbeat(Func<LogField[]> snapshot, LoggerHandle log, TimeSpan? interval = null)
     {
         _snapshot = snapshot ?? throw new ArgumentNullException(nameof(snapshot));
-        _log = Logger.For(Subsystems.Heartbeat);
+        _log = log;
         Interval = interval ?? DefaultInterval;
         _timer = new Timer(_ => Tick(), state: null, Interval, Interval);
     }

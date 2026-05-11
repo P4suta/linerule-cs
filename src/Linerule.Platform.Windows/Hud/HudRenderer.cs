@@ -56,7 +56,7 @@ namespace Linerule.Platform.Windows.Hud;
 /// </summary>
 internal sealed partial class HudRenderer : IDisposable
 {
-    private static readonly LoggerHandle Log = Logger.For(Subsystems.Hud);
+    private readonly LoggerHandle _log;
 
     // Pure-clear color — independent of theme, never user-tunable.
     private static readonly D2D1_COLOR_F Transparent = new()
@@ -108,10 +108,11 @@ internal sealed partial class HudRenderer : IDisposable
 
     public CompositionDrawingSurface Surface { get; }
 
-    public HudRenderer(Compositor compositor, HudLayout layout, HudConfig hudCfg)
+    public HudRenderer(Compositor compositor, HudLayout layout, HudConfig hudCfg, LoggerHandle log)
     {
         ArgumentNullException.ThrowIfNull(compositor);
         ArgumentNullException.ThrowIfNull(hudCfg);
+        _log = log;
         _layout = layout;
 
         _background = ToColorF(hudCfg.Colors.Background);
@@ -133,7 +134,7 @@ internal sealed partial class HudRenderer : IDisposable
             hudCfg.Fonts.MonoFamily
         );
 
-        Log.Debug(
+        _log.Debug(
             "HudRenderer constructed",
             new LogField("size_w", layout.SizePx.X),
             new LogField("size_h", layout.SizePx.Y)
@@ -281,7 +282,7 @@ internal sealed partial class HudRenderer : IDisposable
         }
         catch (Exception ex)
         {
-            Log.Warn(
+            _log.Warn(
                 "HUD draw threw — keeping last frame",
                 new LogField("ex", ex.GetType().Name),
                 new LogField("msg", ex.Message)

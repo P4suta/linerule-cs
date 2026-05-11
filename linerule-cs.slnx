@@ -2,15 +2,22 @@
   <Folder Name="/src/">
     <Project Path="src/Linerule.Core/Linerule.Core.csproj" />
     <Project Path="src/Linerule.Config/Linerule.Config.csproj" />
+    <Project Path="src/Linerule.Diagnostics/Linerule.Diagnostics.csproj" />
+    <Project Path="src/Linerule.Input/Linerule.Input.csproj" />
+    <Project Path="src/Linerule.Bootstrap/Linerule.Bootstrap.csproj" />
     <Project Path="src/Linerule.Platform/Linerule.Platform.csproj" />
     <Project Path="src/Linerule.Platform.Windows/Linerule.Platform.Windows.csproj" />
     <Project Path="src/Linerule.Diagnostics.Storage/Linerule.Diagnostics.Storage.csproj" />
     <Project Path="src/Linerule.Cli/Linerule.Cli.csproj" />
+    <Project Path="src/Linerule.App/Linerule.App.csproj" />
     <Project Path="src/Linerule.XTask/Linerule.XTask.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Linerule.Core.Tests/Linerule.Core.Tests.csproj" />
     <Project Path="tests/Linerule.Config.Tests/Linerule.Config.Tests.csproj" />
+    <Project Path="tests/Linerule.Diagnostics.Tests/Linerule.Diagnostics.Tests.csproj" />
+    <Project Path="tests/Linerule.Input.Tests/Linerule.Input.Tests.csproj" />
+    <Project Path="tests/Linerule.Bootstrap.Tests/Linerule.Bootstrap.Tests.csproj" />
     <Project Path="tests/Linerule.Platform.Tests/Linerule.Platform.Tests.csproj" />
     <Project Path="tests/Linerule.Platform.Windows.Tests/Linerule.Platform.Windows.Tests.csproj" />
     <Project Path="tests/Linerule.Diagnostics.Storage.Tests/Linerule.Diagnostics.Storage.Tests.csproj" />

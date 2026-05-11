@@ -46,12 +46,11 @@ namespace Linerule.Platform.Windows.Rendering;
 /// </summary>
 public sealed partial class RenderClock : IAsyncDisposable
 {
-    private static readonly LoggerHandle Log = Logger.For(Subsystems.Composition);
-
     private readonly Compositor _compositor;
     private readonly RenderBudget _budget;
     private readonly Action _onTick;
     private readonly TimeSpan _commitTimeout;
+    private readonly LoggerHandle _log;
     private CancellationTokenSource? _cts;
     private Task? _loopTask;
     private bool _disposed;
@@ -63,6 +62,7 @@ public sealed partial class RenderClock : IAsyncDisposable
         Compositor compositor,
         RenderTiming timing,
         Action onTick,
+        LoggerHandle log,
         double warnRatio = RenderBudget.DefaultWarnRatio
     )
     {
@@ -71,7 +71,8 @@ public sealed partial class RenderClock : IAsyncDisposable
         _compositor = compositor;
         Timing = timing;
         Stats = new RenderStats();
-        _budget = new RenderBudget(timing, Stats, Log, warnRatio);
+        _log = log;
+        _budget = new RenderBudget(timing, Stats, log, warnRatio);
         _onTick = onTick;
         // Two display frames is the practical ceiling: shorter and a single
         // slow commit on the GPU side false-positives; longer and a real
@@ -79,7 +80,7 @@ public sealed partial class RenderClock : IAsyncDisposable
         const int CommitTimeoutFrames = 2;
         _commitTimeout = TimeSpan.FromTicks(timing.FrameBudget.Ticks * CommitTimeoutFrames);
 
-        Log.Info(
+        _log.Info(
             "RenderClock configured",
             new LogField("display_hz", timing.DisplayRefreshHz),
             new LogField("frame_budget_ms", timing.FrameBudget.TotalMilliseconds),
@@ -150,7 +151,7 @@ public sealed partial class RenderClock : IAsyncDisposable
                 {
                     // Same swallow-and-log discipline as the old timer-tick path —
                     // a transient render error shouldn't kill the overlay session.
-                    Log.Error("render tick threw", ex);
+                    _log.Error("render tick threw", ex);
                 }
                 finally
                 {
@@ -164,7 +165,7 @@ public sealed partial class RenderClock : IAsyncDisposable
         }
         catch (Exception ex)
         {
-            Log.Error("render loop crashed — overlay will stop updating", ex);
+            _log.Error("render loop crashed — overlay will stop updating", ex);
         }
     }
 
@@ -209,16 +210,17 @@ public sealed partial class RenderClock : IAsyncDisposable
                 .ConfigureAwait(false);
             if (winner != loopTask)
             {
-                Log.Warn("render loop did not exit within 1 s — abandoning task");
+                _log.Warn("render loop did not exit within 1 s — abandoning task");
                 // Attach a fault-observer so any post-shutdown exception
                 // from the abandoned task is logged rather than landing
                 // in TaskScheduler.UnobservedTaskException silently.
+                var log = _log;
                 _ = loopTask.ContinueWith(
-                    static t =>
+                    t =>
                     {
                         if (t.IsFaulted && t.Exception is { } ex)
                         {
-                            Log.Error("abandoned render loop task threw post-shutdown", ex);
+                            log.Error("abandoned render loop task threw post-shutdown", ex);
                         }
                     },
                     TaskScheduler.Default

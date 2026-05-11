@@ -5,6 +5,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Linerule.Config;
 using Linerule.Core;
+using Linerule.Input;
 using Linerule.Platform;
 using Linerule.Platform.Windows.Diagnostics;
 using Linerule.Platform.Windows.Hud;
@@ -24,10 +25,6 @@ namespace Linerule.Platform.Windows;
 /// </summary>
 public static partial class WindowsApp
 {
-    private static readonly LoggerHandle Log = Logger.For(Subsystems.WindowsApp);
-    private static readonly LoggerHandle TickLog = Logger.For(Subsystems.TickLoop);
-    private static readonly LoggerHandle HotkeyLog = Logger.For(Subsystems.Hotkey);
-
     // Process-lifetime anchor for the system DispatcherQueueController.
     // Releasing this would tear down the queue and Windows.UI.Composition
     // would lose its dispatcher. Holding as object so the COM RCW lives.
@@ -42,7 +39,7 @@ public static partial class WindowsApp
     /// <see cref="DispatcherQueueTimer"/> usage — per WinAppSDK docs the
     /// lifted and system dispatcher queues coexist on the same thread.
     /// </summary>
-    private static unsafe void EnsureSystemDispatcherQueue()
+    private static unsafe void EnsureSystemDispatcherQueue(LoggerHandle log)
     {
         var options = new DispatcherQueueOptions
         {
@@ -52,35 +49,37 @@ public static partial class WindowsApp
         };
         PInvoke.CreateDispatcherQueueController(options, out var sysController);
         _systemDispatcherAnchor = sysController;
-        Log.Info(
+        log.Info(
             "Windows.System.DispatcherQueueController created",
             new LogField("rcw_type", _systemDispatcherAnchor?.GetType().Name ?? "null")
         );
     }
 
-    public static async Task<int> RunAsync(UserConfig config, CancellationToken cancellationToken)
+    public static async Task<int> RunAsync(UserConfig config, LoggerRoot logger, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(config);
+        ArgumentNullException.ThrowIfNull(logger);
 
-        Log.Info(
+        var log = logger.For(Subsystems.WindowsApp);
+        log.Info(
             "RunAsync begin",
-            new LogField("db", Logger.DbPath),
-            new LogField("run_id", Logger.RunId.ToString("D"))
+            new LogField("db", logger.DbPath),
+            new LogField("run_id", logger.RunId.ToString("D"))
         );
 
         try
         {
-            return await RunCoreAsync(config, cancellationToken).ConfigureAwait(false);
+            return await RunCoreAsync(config, logger, log, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
-            Log.Error("RunAsync caught", ex);
+            log.Error("RunAsync caught", ex);
             CrashDump.Dump("WindowsApp.RunAsync caught", ex, terminating: false);
             return 1;
         }
         finally
         {
-            Log.Info("RunAsync exit");
+            log.Info("RunAsync exit");
         }
     }
 
@@ -105,22 +104,27 @@ public static partial class WindowsApp
     /// for the whole scope via <see cref="GC.KeepAlive(object)"/>; we deliberately
     /// never call <c>ShutdownQueueAsync</c> (see <see cref="ShutdownAsync"/>).
     /// </remarks>
-    private static async Task<int> RunCoreAsync(UserConfig config, CancellationToken cancellationToken)
+    private static async Task<int> RunCoreAsync(
+        UserConfig config,
+        LoggerRoot logger,
+        LoggerHandle log,
+        CancellationToken cancellationToken
+    )
     {
-        using var sessionScope = Logger.PushSession(Guid.NewGuid());
+        using var sessionScope = logger.PushSession(Guid.NewGuid());
         using var bootstrap = WindowsAppRuntimeBootstrap.Initialize();
-        Log.Info("WindowsAppRuntime bootstrapped");
-        var (controller, queue, monitor) = PrepareDispatchAndMonitor();
-        await using var overlay = OverlayWindow.Create(monitor, queue);
-        await using var hotkeys = HotkeyHost.Create();
-        Log.Info("HotkeyHost created");
-        var cursor = new CursorTracker();
-        RegisterAll(hotkeys, config.Hotkeys, config.Input.TapStep);
-        Log.Info("hotkeys registered", new LogField("hint", "press Ctrl+Alt+R to cycle, Ctrl+Alt+Q to quit"));
-        using var foregroundHook = new ForegroundHook(overlay.ReassertTopmost);
+        log.Info("WindowsAppRuntime bootstrapped");
+        var (controller, queue, monitor) = PrepareDispatchAndMonitor(logger, log);
+        await using var overlay = OverlayWindow.Create(monitor, queue, logger);
+        await using var hotkeys = HotkeyHost.Create(logger.For(Subsystems.HotkeyHost));
+        log.Info("HotkeyHost created");
+        var cursor = new CursorTracker(logger.For(Subsystems.CursorTracker));
+        RegisterAll(hotkeys, config.Hotkeys, config.Input.TapStep, logger.For(Subsystems.Hotkey));
+        log.Info("hotkeys registered", new LogField("hint", "press Ctrl+Alt+R to cycle, Ctrl+Alt+Q to quit"));
+        using var foregroundHook = new ForegroundHook(overlay.ReassertTopmost, logger.For(Subsystems.ForegroundHook));
         await using var registration = cancellationToken.Register(queue.EnqueueEventLoopExit);
-        var timing = RenderTiming.Probe(Log, config.Render.FallbackRefreshHz);
-        using var hud = CreateHud(overlay, config.Hud);
+        var timing = RenderTiming.Probe(log, config.Render.FallbackRefreshHz);
+        using var hud = CreateHud(overlay, config.Hud, logger.For(Subsystems.Hud));
         await using var loop = new TickLoop(
             overlay,
             hotkeys,
@@ -130,13 +134,26 @@ public static partial class WindowsApp
             hud,
             config.Hotkeys,
             config.Hud,
-            config.Render.WarnRatio
+            config.Render.WarnRatio,
+            logger.For(Subsystems.TickLoop),
+            logger.For(Subsystems.Composition)
         );
-        using var repeater = new HotkeyRepeater(queue, hotkeys, loop.WouldAffectState, config.Input.Repeat);
+        // Saturation oracle is supplied as a typed capability instead of a
+        // raw callback, so the FSM in Linerule.Input has no implicit
+        // coupling to TickLoop. The closure snapshots the live state and
+        // delegates to the pure Reduce.
+        var oracle = new ReduceOracle(loop.SnapshotState);
+        using var repeater = new HotkeyRepeater(
+            queue,
+            hotkeys,
+            oracle,
+            config.Input.Repeat,
+            logger.For(Subsystems.Hotkey)
+        );
         loop.Start();
         CrashDump.RegisterStateSnapshot(loop.Snapshot);
-        using var heartbeat = new Heartbeat(loop.Snapshot);
-        await RunLoopAndShutdownAsync(queue, loop, hotkeys, overlay).ConfigureAwait(false);
+        using var heartbeat = new Heartbeat(loop.Snapshot, logger.For(Subsystems.Heartbeat));
+        await RunLoopAndShutdownAsync(queue, loop, hotkeys, overlay, log).ConfigureAwait(false);
         GC.KeepAlive(controller);
         return 0;
     }
@@ -157,13 +174,13 @@ public static partial class WindowsApp
         DispatcherQueueController Controller,
         DispatcherQueue Queue,
         ScreenRect<Logical> Monitor
-    ) PrepareDispatchAndMonitor()
+    ) PrepareDispatchAndMonitor(LoggerRoot logger, LoggerHandle log)
     {
-        EnsureSystemDispatcherQueue();
+        EnsureSystemDispatcherQueue(log);
         var controller = DispatcherQueueController.CreateOnCurrentThread();
         var queue = controller.DispatcherQueue;
-        Log.Info("Microsoft.UI.Dispatching.DispatcherQueue created");
-        var monitor = MonitorInfo.PrimaryBounds();
+        log.Info("Microsoft.UI.Dispatching.DispatcherQueue created");
+        var monitor = MonitorInfo.PrimaryBounds(logger.For(Subsystems.Win32));
         return (controller, queue, monitor);
     }
 
@@ -180,13 +197,14 @@ public static partial class WindowsApp
         DispatcherQueue queue,
         TickLoop loop,
         HotkeyHost hotkeys,
-        OverlayWindow overlay
+        OverlayWindow overlay,
+        LoggerHandle log
     )
     {
-        Log.Info("entering run loop");
+        log.Info("entering run loop");
         queue.RunEventLoop();
-        Log.Info("run loop exited");
-        await ShutdownAsync(loop, hotkeys, overlay).ConfigureAwait(false);
+        log.Info("run loop exited");
+        await ShutdownAsync(loop, hotkeys, overlay, log).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -211,7 +229,7 @@ public static partial class WindowsApp
     /// later steps.
     /// </para>
     /// </summary>
-    private static async Task ShutdownAsync(TickLoop loop, HotkeyHost hotkeys, OverlayWindow overlay)
+    private static async Task ShutdownAsync(TickLoop loop, HotkeyHost hotkeys, OverlayWindow overlay, LoggerHandle log)
     {
         await ShutdownStep(
                 "stop tick loop",
@@ -219,12 +237,13 @@ public static partial class WindowsApp
                 {
                     loop.Stop();
                     return Task.CompletedTask;
-                }
+                },
+                log
             )
             .ConfigureAwait(false);
-        await ShutdownStep("dispose hotkeys", () => hotkeys.DisposeAsync().AsTask()).ConfigureAwait(false);
-        await ShutdownStep("dispose overlay", () => overlay.DisposeAsync().AsTask()).ConfigureAwait(false);
-        Log.Info("shutdown: complete");
+        await ShutdownStep("dispose hotkeys", () => hotkeys.DisposeAsync().AsTask(), log).ConfigureAwait(false);
+        await ShutdownStep("dispose overlay", () => overlay.DisposeAsync().AsTask(), log).ConfigureAwait(false);
+        log.Info("shutdown: complete");
 
         // Force-flush stdout/stderr/JSONL — the parent shell otherwise
         // sometimes doesn't see the final newlines and the prompt looks
@@ -243,23 +262,24 @@ public static partial class WindowsApp
         catch (IOException)
         { /* ignore */
         }
-        Logger.Shutdown();
+        // LoggerRoot disposal is owned by AppContext (composition root); the
+        // event-loop layer no longer pulls down logging on its own.
     }
 
     /// <summary>
     /// One step of the ordered teardown — logs the step, runs it, and
     /// catches/logs any throw so a stuck disposer doesn't block later steps.
     /// </summary>
-    private static async Task ShutdownStep(string label, Func<Task> action)
+    private static async Task ShutdownStep(string label, Func<Task> action, LoggerHandle log)
     {
-        Log.Debug($"shutdown: {label}");
+        log.Debug($"shutdown: {label}");
         try
         {
             await action().ConfigureAwait(false);
         }
         catch (Exception ex)
         {
-            Log.Warn(
+            log.Warn(
                 $"shutdown: {label} threw",
                 new LogField("ex", ex.GetType().Name),
                 new LogField("msg", ex.Message)
@@ -267,7 +287,7 @@ public static partial class WindowsApp
         }
     }
 
-    private static void RegisterAll(HotkeyHost host, HotkeyMap map, TapStepConfig tapStep)
+    private static void RegisterAll(HotkeyHost host, HotkeyMap map, TapStepConfig tapStep, LoggerHandle hotkeyLog)
     {
         foreach (var (chord, action) in BuildBindings(map, tapStep))
         {
@@ -277,7 +297,7 @@ public static partial class WindowsApp
                 var result = host.Register(ok.Value, action);
                 if (result is Result<Unit, HotkeyError>.Err err)
                 {
-                    HotkeyLog.Warn(
+                    hotkeyLog.Warn(
                         "register failed",
                         new LogField("chord", chord),
                         new LogField("error", err.Error.ToString())
@@ -286,7 +306,7 @@ public static partial class WindowsApp
             }
             else if (parsed is Result<ChordSpec, ChordError>.Err err)
             {
-                HotkeyLog.Warn(
+                hotkeyLog.Warn(
                     "chord parse failed",
                     new LogField("chord", chord),
                     new LogField("error", err.Error.ToHumanString())
@@ -300,7 +320,7 @@ public static partial class WindowsApp
     /// at the top of its visual tree. Returns a disposable that owns the
     /// HUD's surface / brush / visual / Win2D resources.
     /// </summary>
-    private static HudVisual CreateHud(OverlayWindow overlay, HudConfig hudCfg)
+    private static HudVisual CreateHud(OverlayWindow overlay, HudConfig hudCfg, LoggerHandle hudLog)
     {
         ArgumentNullException.ThrowIfNull(hudCfg);
         var dpiScale = overlay.Dpi / 96f;
@@ -312,7 +332,7 @@ public static partial class WindowsApp
         var monitorWidthPx = (int)overlay.MonitorBounds.Width;
         var layout = HudLayout.ForMonitor(monitorWidthPx, monitorMarginRightPx: 0, dpiScale: dpiScale, hudCfg);
         var layer = overlay.CreateLayer();
-        return new HudVisual(overlay.Compositor, layer, layout, hudCfg);
+        return new HudVisual(overlay.Compositor, layer, layout, hudCfg, hudLog);
     }
 
     private static IEnumerable<(string Chord, OverlayAction Action)> BuildBindings(HotkeyMap map, TapStepConfig tap)
@@ -351,6 +371,7 @@ public static partial class WindowsApp
         private readonly HudVisual _hud;
         private readonly HotkeyMap _hotkeyMap;
         private readonly HudConfig _hudCfg;
+        private readonly LoggerHandle _log;
         private State _state = State.Default;
         private Point<Logical>? _lastCursor;
         private long _frameSeq;
@@ -366,7 +387,9 @@ public static partial class WindowsApp
             HudVisual hud,
             HotkeyMap hotkeyMap,
             HudConfig hudCfg,
-            double warnRatio
+            double warnRatio,
+            LoggerHandle tickLog,
+            LoggerHandle compositionLog
         )
         {
             ArgumentNullException.ThrowIfNull(hudCfg);
@@ -374,16 +397,35 @@ public static partial class WindowsApp
             _hotkeys = hotkeys;
             _cursor = cursor;
             _queue = queue;
-            _clock = new RenderClock(overlay.Compositor, timing, OnTick, warnRatio);
+            _clock = new RenderClock(overlay.Compositor, timing, OnTick, compositionLog, warnRatio);
             _hud = hud;
             _hotkeyMap = hotkeyMap;
             _hudCfg = hudCfg;
+            _log = tickLog;
         }
 
         public void Start()
         {
-            ApplyFrame();
-            RefreshHud();
+            // Initial paint: cursor fallback to monitor center so the first
+            // frame has something sensible even before the cursor has been
+            // polled. Same idempotent shape as the per-tick pipeline emits.
+            if (_state.Visible && _state.Mode != Mode.Off)
+            {
+                var pos =
+                    _cursor.Poll()
+                    ?? new Point<Logical>(
+                        _overlay.MonitorBounds.Left + ((int)_overlay.MonitorBounds.Width / 2),
+                        _overlay.MonitorBounds.Top + ((int)_overlay.MonitorBounds.Height / 2)
+                    );
+                _lastCursor = pos;
+                Interlocked.Increment(ref _frameSeq);
+                ApplyEffect(new TickEffect.DrawOverlay(_state.Mode, pos, _state.Config));
+            }
+            else
+            {
+                ApplyEffect(TickEffect.ClearOverlay.Instance);
+            }
+            ApplyEffect(new TickEffect.RefreshHud(_state));
             _lastHudRefreshAtMs = Environment.TickCount64;
             _clock.Start();
         }
@@ -399,11 +441,8 @@ public static partial class WindowsApp
         /// Reads <c>_state</c> but does not mutate it; safe to call from
         /// the same UI thread that owns the tick loop.
         /// </summary>
-        public bool WouldAffectState(OverlayAction action)
-        {
-            var (_, delta) = Reduce.Apply(_state, action);
-            return delta.IsAny;
-        }
+        /// <summary>Snapshot accessor used by <see cref="ReduceOracle"/>; the oracle re-runs <c>Reduce</c> against this snapshot.</summary>
+        public State SnapshotState() => _state;
 
         public async ValueTask DisposeAsync()
         {
@@ -443,132 +482,89 @@ public static partial class WindowsApp
 
         private void OnTick()
         {
+            // Drain queue once; pure pipeline decides what to do.
+            var drained = new List<OverlayAction>();
             while (_hotkeys.TryDequeue(out var action))
             {
-                if (action is OverlayAction.Quit)
-                {
-                    TickLog.Info("Quit requested");
-                    _queue.EnqueueEventLoopExit();
-                    return;
-                }
-
-                var (next, delta) = Reduce.Apply(_state, action);
-                _state = next;
-                if (delta.IsAny)
-                {
-                    TickLog.Debug(
-                        "state changed",
-                        new LogField("action", action.GetType().Name),
-                        new LogField("mode", _state.Mode),
-                        new LogField("visible", _state.Visible)
-                    );
-                    ApplyFrame();
-                    RefreshHud();
-                }
+                drained.Add(action);
             }
 
-            var current = _cursor.Poll();
-            if (current is { } now && now != _lastCursor)
-            {
-                _lastCursor = now;
-                if (_state.Visible && _state.Mode != Mode.Off)
-                {
-                    Interlocked.Increment(ref _frameSeq);
-                    _overlay.Apply(Render.Frame(_state.Mode, now, _overlay.MonitorBounds, _state.Config));
-                }
-                UpdateHudOpacity(now);
-            }
+            var world = new TickWorld(_state, _lastCursor, Volatile.Read(ref _frameSeq), _lastHudRefreshAtMs);
+            var input = new TickInput(Environment.TickCount64, _cursor.Poll(), drained);
+            var (next, effects) = TickPipeline.Step(world, input, _hudCfg.TelemetryRefreshMs);
 
-            // Periodic telemetry refresh — no state change, but the FPS /
-            // p99 / dropped-frames numbers in the HUD slowly drift. Paced
-            // by wall-clock elapsed (not tick count) so the refresh
-            // cadence is invariant under display-Hz changes. HUD's own
-            // equality gate ensures we don't redraw if nothing moved.
-            var nowMs = Environment.TickCount64;
-            if (nowMs - _lastHudRefreshAtMs >= _hudCfg.TelemetryRefreshMs)
+            _state = next.State;
+            _lastCursor = next.LastCursor;
+            Volatile.Write(ref _frameSeq, next.FrameSeq);
+            _lastHudRefreshAtMs = next.LastHudRefreshAtMs;
+
+            foreach (var effect in effects)
             {
-                _lastHudRefreshAtMs = nowMs;
-                RefreshHud();
+                ApplyEffect(effect);
             }
         }
 
-        private void RefreshHud()
+        private void ApplyEffect(TickEffect effect)
         {
-            var content = HudComposer.Compose(_state, _hotkeyMap, _clock.Stats.Snapshot(), _clock.Timing);
-            _hud.Update(content);
+            switch (effect)
+            {
+                case TickEffect.Exit:
+                    _log.Info("Quit requested");
+                    _queue.EnqueueEventLoopExit();
+                    break;
+                case TickEffect.DrawOverlay draw:
+                    _overlay.Apply(Render.Frame(draw.Mode, draw.Cursor, _overlay.MonitorBounds, draw.Config));
+                    break;
+                case TickEffect.ClearOverlay:
+                    _overlay.Apply(OverlayFrame.Empty);
+                    break;
+                case TickEffect.RefreshHud refresh:
+                    var content = HudComposer.Compose(
+                        refresh.State,
+                        _hotkeyMap,
+                        _clock.Stats.Snapshot(),
+                        _clock.Timing
+                    );
+                    _hud.Update(content);
+                    break;
+                case TickEffect.SetHudOpacity setOp:
+                    UpdateHudOpacity(setOp.Cursor);
+                    break;
+                case TickEffect.LogStateChanged logEvt:
+                    _log.Debug(
+                        "state changed",
+                        new LogField("action", logEvt.Action.GetType().Name),
+                        new LogField("mode", logEvt.Mode),
+                        new LogField("visible", logEvt.Visible)
+                    );
+                    break;
+                default:
+                    // Exhaustive over the closed TickEffect coproduct in
+                    // Linerule.Input — any new variant becomes a compile
+                    // warning at the discriminant site, not silent fall-through.
+                    break;
+            }
         }
 
         /// <summary>
         /// Decay HUD opacity exponentially as the reading-ruler slit
-        /// approaches the HUD panel: <c>opacity = 1 − exp(−distance / decay)</c>.
-        /// Distance is the projected gap between the slit and the HUD
-        /// rectangle along the slit's axis (Y for horizontal mode, X for
-        /// vertical). Overlap → opacity 0; far → opacity ~1. Smooth in both
-        /// directions, no perceptible flicker (per user request 2026-05-11).
+        /// approaches the HUD panel. Pure compute lives in
+        /// <see cref="HudFadeKernel.ComputeOpacity"/> (in <c>Linerule.Input</c>);
+        /// this method only marshals the HUD layout into the kernel's
+        /// <see cref="HudFadeKernel.HudBounds"/> and pushes the result to
+        /// the HUD surface.
         /// </summary>
         private void UpdateHudOpacity(Point<Logical> cursor)
         {
-            // Decay length (logical px) sourced from hud.fade_decay_px; tunes
-            // how aggressively the HUD fades as the slit approaches it.
-            var distance = SlitToHudGap(cursor);
-            var opacity = 1f - MathF.Exp(-distance / _hudCfg.FadeDecayPx);
+            var layout = _hud.Layout;
+            var bounds = new HudFadeKernel.HudBounds(
+                Left: layout.PositionPx.X,
+                Top: layout.PositionPx.Y,
+                Right: layout.PositionPx.X + layout.SizePx.X,
+                Bottom: layout.PositionPx.Y + layout.SizePx.Y
+            );
+            var opacity = HudFadeKernel.ComputeOpacity(_state, cursor, bounds, _hudCfg.FadeDecayPx);
             _hud.SetOpacity(opacity);
-        }
-
-        /// <summary>
-        /// HWND-pixel gap between the reading-ruler slit and the HUD
-        /// rectangle along the slit's axis (Y for horizontal mode, X for
-        /// vertical). Returns <see cref="float.PositiveInfinity"/> when the
-        /// overlay is hidden or in <see cref="Mode.Off"/> — the HUD is then
-        /// fully opaque regardless of cursor position.
-        /// </summary>
-        private float SlitToHudGap(Point<Logical> cursor)
-        {
-            if (!_state.Visible)
-            {
-                return float.PositiveInfinity;
-            }
-            var thickness = _state.Config.Thickness.Value;
-            var hudBounds = _hud.Layout;
-            var hudLeft = hudBounds.PositionPx.X;
-            var hudTop = hudBounds.PositionPx.Y;
-            var hudRight = hudLeft + hudBounds.SizePx.X;
-            var hudBottom = hudTop + hudBounds.SizePx.Y;
-            return _state.Mode switch
-            {
-                Mode.Horizontal => AxisGap(cursor.Y - (thickness / 2f), cursor.Y + (thickness / 2f), hudTop, hudBottom),
-                Mode.Vertical => AxisGap(cursor.X - (thickness / 2f), cursor.X + (thickness / 2f), hudLeft, hudRight),
-                Mode.Off => float.PositiveInfinity,
-                _ => throw new System.Diagnostics.UnreachableException("unknown overlay mode"),
-            };
-        }
-
-        /// <summary>
-        /// Non-negative gap between two 1-D intervals on the same axis;
-        /// 0 when they overlap. <c>max(0, max(bLo-aHi, aLo-bHi))</c> is the
-        /// branch-free form of "if either interval ends before the other
-        /// starts, return the gap; else 0".
-        /// </summary>
-        private static float AxisGap(float aLo, float aHi, float bLo, float bHi) =>
-            Math.Max(0f, Math.Max(bLo - aHi, aLo - bHi));
-
-        private void ApplyFrame()
-        {
-            if (!_state.Visible || _state.Mode == Mode.Off)
-            {
-                _overlay.Apply(OverlayFrame.Empty);
-                return;
-            }
-
-            var pos =
-                _cursor.Poll()
-                ?? new Point<Logical>(
-                    _overlay.MonitorBounds.Left + ((int)_overlay.MonitorBounds.Width / 2),
-                    _overlay.MonitorBounds.Top + ((int)_overlay.MonitorBounds.Height / 2)
-                );
-            _lastCursor = pos;
-            Interlocked.Increment(ref _frameSeq);
-            _overlay.Apply(Render.Frame(_state.Mode, pos, _overlay.MonitorBounds, _state.Config));
         }
     }
 }

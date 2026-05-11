@@ -23,14 +23,13 @@ namespace Linerule.Platform.Windows;
 /// </summary>
 public sealed class HotkeyHost : IHotkeyHost
 {
-    private static readonly LoggerHandle Log = Logger.For(Subsystems.HotkeyHost);
-
     private const string ClassName = "linerule-cs-hotkey-host";
 
     private static WNDPROC? _wndProcKeepAlive;
     private static readonly Dictionary<nint, HotkeyHost> HostByHwnd = [];
 
     private readonly HWND _hwnd;
+    private readonly LoggerHandle _log;
     private readonly Channel<OverlayAction> _channel = Channel.CreateUnbounded<OverlayAction>(
         new UnboundedChannelOptions { SingleReader = true, SingleWriter = true }
     );
@@ -50,11 +49,16 @@ public sealed class HotkeyHost : IHotkeyHost
     /// </summary>
     public Action<ChordSpec, OverlayAction>? OnHotkeyFired { get; set; }
 
-    private HotkeyHost(HWND hwnd) => _hwnd = hwnd;
-
-    public static unsafe HotkeyHost Create()
+    private HotkeyHost(HWND hwnd, LoggerHandle log)
     {
-        EnsureWindowClassRegistered();
+        _hwnd = hwnd;
+        _log = log;
+    }
+
+    public static unsafe HotkeyHost Create(LoggerHandle log)
+    {
+        ArgumentNullException.ThrowIfNull(log);
+        EnsureWindowClassRegistered(log);
 
         // HWND_MESSAGE is the special parent-handle (-3) for message-only windows.
         var messageOnlyParent = new HWND((void*)(nint)(-3));
@@ -79,12 +83,12 @@ public sealed class HotkeyHost : IHotkeyHost
                         lpParam: null
                     ),
                     "CreateWindowExW(HWND_MESSAGE) hotkey host",
-                    Log
+                    log
                 );
 
-                var host = new HotkeyHost(hwnd);
+                var host = new HotkeyHost(hwnd, log);
                 HostByHwnd[(nint)hwnd.Value] = host;
-                Log.Info(
+                log.Info(
                     "created",
                     new LogField("hwnd", string.Create(CultureInfo.InvariantCulture, $"0x{(nint)hwnd.Value:X}"))
                 );
@@ -100,7 +104,7 @@ public sealed class HotkeyHost : IHotkeyHost
 
         if (_chordToId.TryGetValue(chord, out var existingId))
         {
-            Win32Guard.Check(PInvoke.UnregisterHotKey(_hwnd, existingId), "UnregisterHotKey (replace)", Log);
+            Win32Guard.Check(PInvoke.UnregisterHotKey(_hwnd, existingId), "UnregisterHotKey (replace)", _log);
             _idToAction.Remove(existingId);
             _idToChord.Remove(existingId);
             _chordToId.Remove(chord);
@@ -113,7 +117,7 @@ public sealed class HotkeyHost : IHotkeyHost
         if (!PInvoke.RegisterHotKey(_hwnd, id, mods, vk))
         {
             var (err, name) = Win32Guard.LastError();
-            Log.Warn(
+            _log.Warn(
                 "RegisterHotKey failed",
                 new LogField("id", id),
                 new LogField("chord", chord.ToString() ?? "?"),
@@ -126,7 +130,7 @@ public sealed class HotkeyHost : IHotkeyHost
         _idToAction[id] = action;
         _idToChord[id] = chord;
         _chordToId[chord] = id;
-        Log.Debug(
+        _log.Debug(
             "RegisterHotKey ok",
             new LogField("id", id),
             new LogField("chord", chord.ToString() ?? "?"),
@@ -155,21 +159,21 @@ public sealed class HotkeyHost : IHotkeyHost
             return ValueTask.CompletedTask;
         }
 
-        Log.Debug("dispose begin", new LogField("registered", _idToAction.Count));
+        _log.Debug("dispose begin", new LogField("registered", _idToAction.Count));
         foreach (var id in _idToAction.Keys)
         {
-            Win32Guard.Check(PInvoke.UnregisterHotKey(_hwnd, id), "UnregisterHotKey (dispose)", Log);
+            Win32Guard.Check(PInvoke.UnregisterHotKey(_hwnd, id), "UnregisterHotKey (dispose)", _log);
         }
 
         _channel.Writer.TryComplete();
-        Win32Guard.Check(PInvoke.DestroyWindow(_hwnd), "DestroyWindow hotkey host", Log);
+        Win32Guard.Check(PInvoke.DestroyWindow(_hwnd), "DestroyWindow hotkey host", _log);
         HostByHwnd.Remove((nint)_hwnd.Value);
         _disposed = true;
-        Log.Info("dispose ok");
+        _log.Info("dispose ok");
         return ValueTask.CompletedTask;
     }
 
-    private static unsafe void EnsureWindowClassRegistered()
+    private static unsafe void EnsureWindowClassRegistered(LoggerHandle log)
     {
         if (_wndProcKeepAlive is not null)
         {
@@ -189,7 +193,7 @@ public sealed class HotkeyHost : IHotkeyHost
                 lpszClassName = className,
             };
 
-            Win32Guard.CheckOrThrow(PInvoke.RegisterClassEx(in wc) != 0, "RegisterClassExW hotkey host", Log);
+            Win32Guard.CheckOrThrow(PInvoke.RegisterClassEx(in wc) != 0, "RegisterClassExW hotkey host", log);
         }
     }
 

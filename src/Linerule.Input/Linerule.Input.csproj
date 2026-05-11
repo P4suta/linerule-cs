@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Linerule.Input</RootNamespace>
+    <AssemblyName>Linerule.Input</AssemblyName>
+    <Description>Platform-neutral input-stage logic: the HoldFsm sealed-DU state machine (Idle | Repeating | AwaitingRelease), ISaturationOracle / ReduceOracle, HudFadeKernel pure compute, and the TickPipeline reducer. No Win32 / DispatcherQueue / WinAppSDK references — every transition is property-testable.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Linerule.Core\Linerule.Core.csproj" />
+    <ProjectReference Include="..\Linerule.Config\Linerule.Config.csproj" />
+    <ProjectReference Include="..\Linerule.Platform\Linerule.Platform.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Linerule.Input.Tests" />
+  </ItemGroup>
+</Project>
