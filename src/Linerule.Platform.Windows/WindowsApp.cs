@@ -64,7 +64,7 @@ public static partial class WindowsApp
 
         Log.Info(
             "RunAsync begin",
-            new LogField("jsonl", Logger.LogPath),
+            new LogField("db", Logger.DbPath),
             new LogField("run_id", Logger.RunId.ToString("D"))
         );
 
@@ -84,63 +84,109 @@ public static partial class WindowsApp
         }
     }
 
+    /// <summary>
+    /// Single-place lifecycle setup with strict using / await-using ordering —
+    /// see split helpers <see cref="PrepareDispatchAndMonitor"/> and
+    /// <see cref="RunLoopAndShutdownAsync"/>.
+    /// </summary>
+    /// <remarks>
+    /// Disposal contract: <see cref="OverlayWindow.DisposeAsync"/> and
+    /// <see cref="HotkeyHost.DisposeAsync"/> are idempotent, so the explicit
+    /// <see cref="ShutdownAsync"/> inside <see cref="RunLoopAndShutdownAsync"/>
+    /// can dispose them before the implicit <c>await using</c> at scope exit;
+    /// <c>await using</c> stays to honor CA2000 and the
+    /// <see cref="OverlayWindow.Create"/>-throws path.
+    /// Construction order: <see cref="HotkeyRepeater"/> after <see cref="TickLoop"/>
+    /// so it can probe <see cref="TickLoop.WouldAffectState"/> (saturated boundary
+    /// or Off mode ⇒ no polling); LIFO disposal unhooks the repeater before the
+    /// host. <see cref="CrashDump.RegisterStateSnapshot"/> and
+    /// <see cref="Heartbeat"/> share the single <see cref="TickLoop.Snapshot"/>
+    /// source. The lifted <see cref="DispatcherQueueController"/> is kept rooted
+    /// for the whole scope via <see cref="GC.KeepAlive(object)"/>; we deliberately
+    /// never call <c>ShutdownQueueAsync</c> (see <see cref="ShutdownAsync"/>).
+    /// </remarks>
     private static async Task<int> RunCoreAsync(UserConfig config, CancellationToken cancellationToken)
     {
         using var sessionScope = Logger.PushSession(Guid.NewGuid());
-
         using var bootstrap = WindowsAppRuntimeBootstrap.Initialize();
         Log.Info("WindowsAppRuntime bootstrapped");
-
-        EnsureSystemDispatcherQueue();
-
-        var controller = DispatcherQueueController.CreateOnCurrentThread();
-        var queue = controller.DispatcherQueue;
-        Log.Info("Microsoft.UI.Dispatching.DispatcherQueue created");
-
-        var monitor = MonitorInfo.PrimaryBounds();
-        // Both OverlayWindow.DisposeAsync and HotkeyHost.DisposeAsync are
-        // idempotent (guarded by `_disposed`), so it is safe for the
-        // explicit ShutdownAsync below to dispose them BEFORE the implicit
-        // `await using` does so at scope end. We need the ordered shutdown
-        // to drain the dispatcher queue properly, but we keep `await using`
-        // so the analyzer's CA2000 (and the runtime invariant) still hold
-        // on every code path — including `OverlayWindow.Create` throwing.
+        var (controller, queue, monitor) = PrepareDispatchAndMonitor();
         await using var overlay = OverlayWindow.Create(monitor, queue);
         await using var hotkeys = HotkeyHost.Create();
         Log.Info("HotkeyHost created");
         var cursor = new CursorTracker();
-
-        RegisterAll(hotkeys, config.Hotkeys);
+        RegisterAll(hotkeys, config.Hotkeys, config.Input.TapStep);
         Log.Info("hotkeys registered", new LogField("hint", "press Ctrl+Alt+R to cycle, Ctrl+Alt+Q to quit"));
-
         using var foregroundHook = new ForegroundHook(overlay.ReassertTopmost);
         await using var registration = cancellationToken.Register(queue.EnqueueEventLoopExit);
-        var timing = RenderTiming.Probe(Log);
-        using var hud = CreateHud(overlay);
-        await using var loop = new TickLoop(overlay, hotkeys, cursor, queue, timing, hud, config.Hotkeys);
-        // Long-press auto-repeat layer. Constructed AFTER the tick loop
-        // so it can probe `loop.WouldAffectState` — when a held chord's
-        // action would be a no-op (saturated boundary or Off mode), the
-        // repeater stops polling instead of flooding the channel. LIFO
-        // scope cleanup unhooks the repeater from the hotkey host
-        // before the host disposes, so no dangling subscriber.
-        using var repeater = new HotkeyRepeater(queue, hotkeys, loop.WouldAffectState);
+        var timing = RenderTiming.Probe(Log, config.Render.FallbackRefreshHz);
+        using var hud = CreateHud(overlay, config.Hud);
+        await using var loop = new TickLoop(
+            overlay,
+            hotkeys,
+            cursor,
+            queue,
+            timing,
+            hud,
+            config.Hotkeys,
+            config.Hud,
+            config.Render.WarnRatio
+        );
+        using var repeater = new HotkeyRepeater(queue, hotkeys, loop.WouldAffectState, config.Input.Repeat);
         loop.Start();
-
-        // Hand the loop's state to CrashDump so post-mortem includes the
-        // current Mode/Lifecycle/cursor in the dump. Heartbeat reads the
-        // same snapshot — one source of truth for "what is the app doing
-        // right now."
         CrashDump.RegisterStateSnapshot(loop.Snapshot);
-
         using var heartbeat = new Heartbeat(loop.Snapshot);
+        await RunLoopAndShutdownAsync(queue, loop, hotkeys, overlay).ConfigureAwait(false);
+        GC.KeepAlive(controller);
+        return 0;
+    }
 
+    /// <summary>
+    /// One-shot dispatcher + primary-monitor preparation. Bundles the
+    /// artifacts the lifecycle needs before any <c>await using</c> chain
+    /// begins: the lifted <see cref="DispatcherQueueController"/>, its
+    /// <see cref="DispatcherQueue"/>, and the primary monitor bounds. The
+    /// system queue is established first so <c>Windows.UI.Composition</c>
+    /// sees a dispatcher. The caller is responsible for rooting the
+    /// returned controller for the lifetime of the run (via
+    /// <c>GC.KeepAlive</c>); we deliberately do not call
+    /// <c>ShutdownQueueAsync</c> on it (see remarks on
+    /// <see cref="ShutdownAsync"/>).
+    /// </summary>
+    private static (
+        DispatcherQueueController Controller,
+        DispatcherQueue Queue,
+        ScreenRect<Logical> Monitor
+    ) PrepareDispatchAndMonitor()
+    {
+        EnsureSystemDispatcherQueue();
+        var controller = DispatcherQueueController.CreateOnCurrentThread();
+        var queue = controller.DispatcherQueue;
+        Log.Info("Microsoft.UI.Dispatching.DispatcherQueue created");
+        var monitor = MonitorInfo.PrimaryBounds();
+        return (controller, queue, monitor);
+    }
+
+    /// <summary>
+    /// Pumps the WinAppSDK event loop on the calling thread, then runs the
+    /// ordered teardown. Receives the loop / hotkey / overlay references by
+    /// value so the caller's using / await-using scope still owns their
+    /// disposal — this helper merely sequences the
+    /// explicit <see cref="ShutdownAsync"/> call between
+    /// <see cref="DispatcherQueue.RunEventLoop"/> returning and the caller's
+    /// LIFO scope exit.
+    /// </summary>
+    private static async Task RunLoopAndShutdownAsync(
+        DispatcherQueue queue,
+        TickLoop loop,
+        HotkeyHost hotkeys,
+        OverlayWindow overlay
+    )
+    {
         Log.Info("entering run loop");
         queue.RunEventLoop();
         Log.Info("run loop exited");
-
         await ShutdownAsync(loop, hotkeys, overlay).ConfigureAwait(false);
-        return 0;
     }
 
     /// <summary>
@@ -221,9 +267,9 @@ public static partial class WindowsApp
         }
     }
 
-    private static void RegisterAll(HotkeyHost host, HotkeyMap map)
+    private static void RegisterAll(HotkeyHost host, HotkeyMap map, TapStepConfig tapStep)
     {
-        foreach (var (chord, action) in BuildBindings(map))
+        foreach (var (chord, action) in BuildBindings(map, tapStep))
         {
             var parsed = ChordParser.Parse(chord);
             if (parsed is Result<ChordSpec, ChordError>.Ok ok)
@@ -254,8 +300,9 @@ public static partial class WindowsApp
     /// at the top of its visual tree. Returns a disposable that owns the
     /// HUD's surface / brush / visual / Win2D resources.
     /// </summary>
-    private static HudVisual CreateHud(OverlayWindow overlay)
+    private static HudVisual CreateHud(OverlayWindow overlay, HudConfig hudCfg)
     {
+        ArgumentNullException.ThrowIfNull(hudCfg);
         var dpiScale = overlay.Dpi / 96f;
         // `MonitorBounds.Width` already comes from GetSystemMetrics on a
         // per-monitor V2 process — i.e. physical pixels of the primary
@@ -263,24 +310,15 @@ public static partial class WindowsApp
         // would double-scale and push the HUD off-screen
         // (verified 2026-05-11: HUD at offset_x=3366 on a 2560-wide HWND).
         var monitorWidthPx = (int)overlay.MonitorBounds.Width;
-        var layout = HudLayout.ForMonitor(monitorWidthPx, monitorMarginRightPx: 0, dpiScale: dpiScale);
+        var layout = HudLayout.ForMonitor(monitorWidthPx, monitorMarginRightPx: 0, dpiScale: dpiScale, hudCfg);
         var layer = overlay.CreateLayer();
-        return new HudVisual(overlay.Compositor, layer, layout);
+        return new HudVisual(overlay.Compositor, layer, layout, hudCfg);
     }
 
-    private static IEnumerable<(string Chord, OverlayAction Action)> BuildBindings(HotkeyMap map)
+    private static IEnumerable<(string Chord, OverlayAction Action)> BuildBindings(HotkeyMap map, TapStepConfig tap)
     {
-        // Tap step sizes — what one isolated press moves. Held presses
-        // ignore these and shrink to ±1 via HotkeyRepeater so a long
-        // press reads as "stepless" (user feedback 2026-05-11
-        // "感覚としては無段階"). 8 is the sweet spot for one-tap nudges:
-        // chunky enough to feel intentional, fine enough that repeated
-        // taps aren't comically far apart.
-        //   thickness: 1..1024 logical px (Thickness.MaxValue)
-        //   opacity:   1..255 alpha
-        const int ThicknessTapStep = 8;
-        const int OpacityTapStep = 8;
-
+        // Tap step sizes from config. Held presses ignore these and shrink
+        // to ±1 via HotkeyRepeater so a long press reads as "stepless".
         yield return (map.CycleMode, OverlayAction.CycleMode.Instance);
         // Tap = persistent toggle (the WM_HOTKEY firing flips state and
         // sticks). HotkeyRepeater detects long-press (≥ 250 ms) and
@@ -288,10 +326,10 @@ public static partial class WindowsApp
         // sustained hold becomes "peek-through-and-restore" without
         // changing the bound action (user feedback 2026-05-11).
         yield return (map.ToggleVisible, OverlayAction.ToggleVisible.Instance);
-        yield return (map.Thicker, new OverlayAction.BumpThickness(+ThicknessTapStep));
-        yield return (map.Thinner, new OverlayAction.BumpThickness(-ThicknessTapStep));
-        yield return (map.MoreOpaque, new OverlayAction.BumpOpacity(+OpacityTapStep));
-        yield return (map.LessOpaque, new OverlayAction.BumpOpacity(-OpacityTapStep));
+        yield return (map.Thicker, new OverlayAction.BumpThickness(+tap.Thickness));
+        yield return (map.Thinner, new OverlayAction.BumpThickness(-tap.Thickness));
+        yield return (map.MoreOpaque, new OverlayAction.BumpOpacity(+tap.Opacity));
+        yield return (map.LessOpaque, new OverlayAction.BumpOpacity(-tap.Opacity));
         yield return (map.Quit, OverlayAction.Quit.Instance);
     }
 
@@ -305,14 +343,6 @@ public static partial class WindowsApp
     /// </summary>
     private sealed partial class TickLoop : IAsyncDisposable
     {
-        // HUD telemetry (FPS / dropped frames / commit timeouts) is paced
-        // by wall-clock elapsed, not by tick count — because under
-        // vsync-aligned scheduling the tick rate equals the display
-        // refresh, which can vary (60 / 120 / 144 / 165 / 240 Hz) and
-        // even fluctuate at runtime. 200 ms is the human-perceptible
-        // refresh cadence target.
-        private const long HudTelemetryRefreshIntervalMs = 200;
-
         private readonly OverlayWindow _overlay;
         private readonly HotkeyHost _hotkeys;
         private readonly CursorTracker _cursor;
@@ -320,6 +350,7 @@ public static partial class WindowsApp
         private readonly RenderClock _clock;
         private readonly HudVisual _hud;
         private readonly HotkeyMap _hotkeyMap;
+        private readonly HudConfig _hudCfg;
         private State _state = State.Default;
         private Point<Logical>? _lastCursor;
         private long _frameSeq;
@@ -333,16 +364,20 @@ public static partial class WindowsApp
             DispatcherQueue queue,
             RenderTiming timing,
             HudVisual hud,
-            HotkeyMap hotkeyMap
+            HotkeyMap hotkeyMap,
+            HudConfig hudCfg,
+            double warnRatio
         )
         {
+            ArgumentNullException.ThrowIfNull(hudCfg);
             _overlay = overlay;
             _hotkeys = hotkeys;
             _cursor = cursor;
             _queue = queue;
-            _clock = new RenderClock(overlay.Compositor, timing, OnTick);
+            _clock = new RenderClock(overlay.Compositor, timing, OnTick, warnRatio);
             _hud = hud;
             _hotkeyMap = hotkeyMap;
+            _hudCfg = hudCfg;
         }
 
         public void Start()
@@ -450,7 +485,7 @@ public static partial class WindowsApp
             // cadence is invariant under display-Hz changes. HUD's own
             // equality gate ensures we don't redraw if nothing moved.
             var nowMs = Environment.TickCount64;
-            if (nowMs - _lastHudRefreshAtMs >= HudTelemetryRefreshIntervalMs)
+            if (nowMs - _lastHudRefreshAtMs >= _hudCfg.TelemetryRefreshMs)
             {
                 _lastHudRefreshAtMs = nowMs;
                 RefreshHud();
@@ -473,13 +508,10 @@ public static partial class WindowsApp
         /// </summary>
         private void UpdateHudOpacity(Point<Logical> cursor)
         {
-            // Decay length tunes how aggressively the HUD fades. ~120 logical
-            // pixels means a clear "out of the way" range while keeping the
-            // visible region wide enough that the HUD is fully opaque the
-            // moment the user looks away from it.
-            const float DecayPx = 120f;
+            // Decay length (logical px) sourced from hud.fade_decay_px; tunes
+            // how aggressively the HUD fades as the slit approaches it.
             var distance = SlitToHudGap(cursor);
-            var opacity = 1f - MathF.Exp(-distance / DecayPx);
+            var opacity = 1f - MathF.Exp(-distance / _hudCfg.FadeDecayPx);
             _hud.SetOpacity(opacity);
         }
 

@@ -1,5 +1,6 @@
 using System;
 using System.Numerics;
+using Linerule.Config;
 using Linerule.Platform.Windows.Diagnostics;
 using Windows.UI.Composition;
 
@@ -45,6 +46,17 @@ internal sealed partial class HudVisual : IDisposable
     private readonly SpriteVisual _visual;
     private readonly CompositionSurfaceBrush _brush;
     private readonly HudLayout _layout;
+
+    /// <summary>
+    /// Steady-state opacity multiplier applied to the entire HUD subtree.
+    /// The tick-loop's fade factor (0..1, computed from cursor distance) is
+    /// multiplied by this base, so a fully visible HUD lands at
+    /// <c>_baseOpacity</c> rather than 1.0. Sourced from
+    /// <see cref="HudConfig.BaseOpacity"/> — default 0.875 ≈ 87.5% opaque
+    /// (user request 2026-05-11).
+    /// </summary>
+    private readonly float _baseOpacity;
+
     private HudContent? _last;
     private long _lastDrawAtMs;
     private float _lastOpacity = 1f;
@@ -53,18 +65,21 @@ internal sealed partial class HudVisual : IDisposable
     /// <summary>HUD rectangle in HWND-pixel space.</summary>
     public HudLayout Layout => _layout;
 
-    public HudVisual(Compositor compositor, ContainerVisual parent, HudLayout layout)
+    public HudVisual(Compositor compositor, ContainerVisual parent, HudLayout layout, HudConfig hudCfg)
     {
         ArgumentNullException.ThrowIfNull(compositor);
         ArgumentNullException.ThrowIfNull(parent);
+        ArgumentNullException.ThrowIfNull(hudCfg);
         _parent = parent;
         _layout = layout;
-        _renderer = new HudRenderer(compositor, layout);
+        _baseOpacity = hudCfg.BaseOpacity;
+        _renderer = new HudRenderer(compositor, layout, hudCfg);
         _brush = compositor.CreateSurfaceBrush(_renderer.Surface);
         _visual = compositor.CreateSpriteVisual();
         _visual.Brush = _brush;
         _visual.Offset = new Vector3(layout.PositionPx.X, layout.PositionPx.Y, 0);
         _visual.Size = layout.SizePx;
+        _visual.Opacity = _baseOpacity;
         _parent.Children.InsertAtTop(_visual);
         Log.Info(
             "HUD visual attached",
@@ -76,10 +91,12 @@ internal sealed partial class HudVisual : IDisposable
     }
 
     /// <summary>
-    /// Fade the entire HUD subtree by mutating the SpriteVisual's
-    /// <see cref="Visual.Opacity"/>. Idempotent for unchanged values
-    /// (saves a WinRT property write per tick on steady-state distance).
-    /// Values are clamped to [0, 1].
+    /// Fade the entire HUD subtree. The supplied value is the cursor-driven
+    /// fade factor in [0, 1]; the actual <see cref="Visual.Opacity"/> written
+    /// is <c>fade × <see cref="BaseOpacity"/></c>, so a fully visible HUD
+    /// sits at the translucent base level rather than at 1.0. Idempotent
+    /// for unchanged values (saves a WinRT property write per tick on
+    /// steady-state distance). Values are clamped to [0, 1].
     ///
     /// <para>
     /// When opacity falls below <see cref="CullThreshold"/> the visual is
@@ -102,7 +119,7 @@ internal sealed partial class HudVisual : IDisposable
         {
             return;
         }
-        _visual.Opacity = clamped;
+        _visual.Opacity = clamped * _baseOpacity;
         _visual.IsVisible = clamped > CullThreshold;
         _lastOpacity = clamped;
     }

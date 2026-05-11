@@ -37,17 +37,17 @@ namespace Linerule.Platform.Windows.Rendering;
 [StructLayout(LayoutKind.Auto)]
 public readonly record struct RenderTiming(int DisplayRefreshHz, TimeSpan FrameBudget)
 {
-    private const int FallbackRefreshHz = 60;
+    private const int DefaultFallbackRefreshHz = 60;
 
     /// <summary>
     /// Query the primary display's refresh rate and derive the budget.
-    /// Falls back to 60 Hz if the OS query fails.
+    /// Falls back to <paramref name="fallbackHz"/> (default 60) if the OS query fails.
     /// </summary>
-    public static RenderTiming Probe(LoggerHandle log)
+    public static RenderTiming Probe(LoggerHandle log, int fallbackHz = DefaultFallbackRefreshHz)
     {
         ArgumentNullException.ThrowIfNull(log);
-        var refreshHz = ProbePrimaryRefreshHz(log);
-        return ForRefreshHz(refreshHz);
+        var refreshHz = ProbePrimaryRefreshHz(log, fallbackHz);
+        return ForRefreshHz(refreshHz, fallbackHz);
     }
 
     /// <summary>
@@ -55,9 +55,9 @@ public readonly record struct RenderTiming(int DisplayRefreshHz, TimeSpan FrameB
     /// and for callers that want to override the probe (e.g. force a 60 Hz
     /// budget in CI).
     /// </summary>
-    public static RenderTiming ForRefreshHz(int refreshHz)
+    public static RenderTiming ForRefreshHz(int refreshHz, int fallbackHz = DefaultFallbackRefreshHz)
     {
-        var hz = refreshHz < 1 ? FallbackRefreshHz : refreshHz;
+        var hz = refreshHz < 1 ? fallbackHz : refreshHz;
         // Integer division on TicksPerSecond avoids the `1000.0 / hz`
         // float round-trip — at 60 Hz the result is 166666 ticks
         // (= 16.6666 ms) exactly, with no double-precision residue that
@@ -65,7 +65,7 @@ public readonly record struct RenderTiming(int DisplayRefreshHz, TimeSpan FrameB
         return new RenderTiming(DisplayRefreshHz: hz, FrameBudget: TimeSpan.FromTicks(TimeSpan.TicksPerSecond / hz));
     }
 
-    private static unsafe int ProbePrimaryRefreshHz(LoggerHandle log)
+    private static unsafe int ProbePrimaryRefreshHz(LoggerHandle log, int fallbackHz)
     {
         var devMode = new DEVMODEW { dmSize = (ushort)sizeof(DEVMODEW) };
         // Passing null for the device name selects the primary display.
@@ -82,7 +82,7 @@ public readonly record struct RenderTiming(int DisplayRefreshHz, TimeSpan FrameB
                 new LogField("err", err),
                 new LogField("err_name", name)
             );
-            return FallbackRefreshHz;
+            return fallbackHz;
         }
         var hz = (int)devMode.dmDisplayFrequency;
         // 0 / 1 are documented as "default" / "lowest" — neither is a real
@@ -93,7 +93,7 @@ public readonly record struct RenderTiming(int DisplayRefreshHz, TimeSpan FrameB
                 "EnumDisplaySettings returned no usable refresh rate — falling back to 60 Hz",
                 new LogField("raw_hz", hz)
             );
-            return FallbackRefreshHz;
+            return fallbackHz;
         }
         return hz;
     }

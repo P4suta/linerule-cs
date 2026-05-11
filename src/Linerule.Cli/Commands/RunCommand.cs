@@ -12,10 +12,15 @@ internal static class RunCommand
     public static Command Build()
     {
         var cmd = new Command("run", "Start the overlay (default).");
+        var configOption = new Option<string?>("--config", "-c")
+        {
+            Description = "Path to config.toml (default: %APPDATA%\\linerule\\config.toml).",
+        };
+        cmd.Options.Add(configOption);
         cmd.SetAction(
-            async (_, cancellationToken) =>
+            async (parseResult, cancellationToken) =>
             {
-                var path = ConfigLoader.DefaultPath();
+                var path = parseResult.GetValue(configOption) ?? ConfigLoader.DefaultPath();
                 var loaded = File.Exists(path)
                     ? ConfigLoader.Load(path)
                     : Result.Ok<UserConfig, ConfigError>(UserConfig.Default);

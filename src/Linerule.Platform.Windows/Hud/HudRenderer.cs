@@ -2,6 +2,8 @@ using System;
 using System.Collections.Immutable;
 using System.Globalization;
 using System.Runtime.InteropServices;
+using Linerule.Config;
+using Linerule.Core;
 using Linerule.Platform.Windows.Diagnostics;
 using Linerule.Platform.Windows.Win32;
 using Windows.Foundation;
@@ -56,8 +58,7 @@ internal sealed partial class HudRenderer : IDisposable
 {
     private static readonly LoggerHandle Log = Logger.For(Subsystems.Hud);
 
-    // D2D color constants (float RGBA, 0..1) — direct port of the old
-    // Win2D Windows.UI.Color constants.
+    // Pure-clear color — independent of theme, never user-tunable.
     private static readonly D2D1_COLOR_F Transparent = new()
     {
         r = 0f,
@@ -65,59 +66,17 @@ internal sealed partial class HudRenderer : IDisposable
         b = 0f,
         a = 0f,
     };
-    private static readonly D2D1_COLOR_F Background = new()
-    {
-        r = 0x10 / 255f,
-        g = 0x12 / 255f,
-        b = 0x18 / 255f,
-        a = 0xD8 / 255f,
-    };
-    private static readonly D2D1_COLOR_F Foreground = new()
-    {
-        r = 0xE6 / 255f,
-        g = 0xE9 / 255f,
-        b = 0xEF / 255f,
-        a = 1f,
-    };
-    private static readonly D2D1_COLOR_F Subtle = new()
-    {
-        r = 0x9A / 255f,
-        g = 0xA3 / 255f,
-        b = 0xB2 / 255f,
-        a = 1f,
-    };
-    private static readonly D2D1_COLOR_F Accent = new()
-    {
-        r = 0xFF / 255f,
-        g = 0xC2 / 255f,
-        b = 0x4D / 255f,
-        a = 1f,
-    };
-    private static readonly D2D1_COLOR_F Hint = new()
-    {
-        r = 0xFF / 255f,
-        g = 0x6B / 255f,
-        b = 0x6B / 255f,
-        a = 1f,
-    };
-    private static readonly D2D1_COLOR_F Divider = new()
-    {
-        r = 0xE6 / 255f,
-        g = 0xE9 / 255f,
-        b = 0xEF / 255f,
-        a = 0x40 / 255f,
-    };
 
-    // Single font family names — DirectWrite's IDWriteFactory.CreateTextFormat
-    // expects exactly one face per call (it does NOT parse CSS-style
-    // comma-separated fallback lists; an unrecognized name silently maps
-    // to the system default, which is proportional — so the prior
-    // "Cascadia Code, Consolas, Courier New" string was rendering as a
-    // proportional substitute, which is why the hotkey rows didn't read
-    // as monospace at all (user feedback 2026-05-11). Cascadia Mono
-    // ships with Windows Terminal and Windows 11; Segoe UI is universal.
-    private const string MonoFontFamily = "Cascadia Mono";
-    private const string TitleFontFamily = "Segoe UI";
+    // Theme colors are now instance fields sourced from HudConfig.Colors so
+    // the user can re-skin the HUD via config.toml. DirectWrite font-family
+    // names (single-name semantics — see feedback_directwrite_single_font_name)
+    // are likewise instance-bound to HudConfig.Fonts.{TitleFamily,MonoFamily}.
+    private readonly D2D1_COLOR_F _background;
+    private readonly D2D1_COLOR_F _foreground;
+    private readonly D2D1_COLOR_F _subtle;
+    private readonly D2D1_COLOR_F _accent;
+    private readonly D2D1_COLOR_F _hint;
+    private readonly D2D1_COLOR_F _divider;
 
     // IID for ID2D1DeviceContext (D2D 1.1) — used as `iid` argument to
     // ICompositionDrawingSurfaceInterop.BeginDraw. Byte-array constructor
@@ -149,17 +108,30 @@ internal sealed partial class HudRenderer : IDisposable
 
     public CompositionDrawingSurface Surface { get; }
 
-    public HudRenderer(Compositor compositor, HudLayout layout)
+    public HudRenderer(Compositor compositor, HudLayout layout, HudConfig hudCfg)
     {
         ArgumentNullException.ThrowIfNull(compositor);
+        ArgumentNullException.ThrowIfNull(hudCfg);
         _layout = layout;
+
+        _background = ToColorF(hudCfg.Colors.Background);
+        _foreground = ToColorF(hudCfg.Colors.Foreground);
+        _subtle = ToColorF(hudCfg.Colors.Subtle);
+        _accent = ToColorF(hudCfg.Colors.Accent);
+        _hint = ToColorF(hudCfg.Colors.Hint);
+        _divider = ToColorF(hudCfg.Colors.Divider);
 
         _d3dDevice = CreateD3D11Device();
         _d2dDevice = CreateD2DDevice(_d3dDevice);
         _graphicsDevice = CreateGraphicsDevice(compositor, _d2dDevice);
         Surface = CreateDrawingSurface(_graphicsDevice, layout);
         _dwriteFactory = CreateDWriteFactory();
-        (_titleFormat, _statusFormat, _bodyFormat, _telemetryFormat) = CreateTextFormats(_dwriteFactory, layout);
+        (_titleFormat, _statusFormat, _bodyFormat, _telemetryFormat) = CreateTextFormats(
+            _dwriteFactory,
+            layout,
+            hudCfg.Fonts.TitleFamily,
+            hudCfg.Fonts.MonoFamily
+        );
 
         Log.Debug(
             "HudRenderer constructed",
@@ -167,6 +139,15 @@ internal sealed partial class HudRenderer : IDisposable
             new LogField("size_h", layout.SizePx.Y)
         );
     }
+
+    private static D2D1_COLOR_F ToColorF(Rgba c) =>
+        new()
+        {
+            r = c.R / 255f,
+            g = c.G / 255f,
+            b = c.B / 255f,
+            a = c.A / 255f,
+        };
 
     private static unsafe ID3D11Device CreateD3D11Device()
     {
@@ -265,29 +246,24 @@ internal sealed partial class HudRenderer : IDisposable
         IDWriteTextFormat Status,
         IDWriteTextFormat Body,
         IDWriteTextFormat Telemetry
-    ) CreateTextFormats(IDWriteFactory dwriteFactory, HudLayout layout) =>
+    ) CreateTextFormats(IDWriteFactory dwriteFactory, HudLayout layout, string titleFamily, string monoFamily) =>
         (
             MakeFormat(
                 dwriteFactory,
-                TitleFontFamily,
+                titleFamily,
                 layout.FontSizes.Title,
                 DWRITE_FONT_WEIGHT.DWRITE_FONT_WEIGHT_SEMI_BOLD
             ),
             MakeFormat(
                 dwriteFactory,
-                MonoFontFamily,
+                monoFamily,
                 layout.FontSizes.Status,
                 DWRITE_FONT_WEIGHT.DWRITE_FONT_WEIGHT_NORMAL
             ),
+            MakeFormat(dwriteFactory, monoFamily, layout.FontSizes.Body, DWRITE_FONT_WEIGHT.DWRITE_FONT_WEIGHT_NORMAL),
             MakeFormat(
                 dwriteFactory,
-                MonoFontFamily,
-                layout.FontSizes.Body,
-                DWRITE_FONT_WEIGHT.DWRITE_FONT_WEIGHT_NORMAL
-            ),
-            MakeFormat(
-                dwriteFactory,
-                MonoFontFamily,
+                monoFamily,
                 layout.FontSizes.Telemetry,
                 DWRITE_FONT_WEIGHT.DWRITE_FONT_WEIGHT_NORMAL
             )
@@ -356,12 +332,12 @@ internal sealed partial class HudRenderer : IDisposable
 
     private void PaintPanel(ID2D1DeviceContext ctx, in HudContent content)
     {
-        ctx.CreateSolidColorBrush(Background, brushProperties: null, out var bgBrush);
-        ctx.CreateSolidColorBrush(Foreground, brushProperties: null, out var fgBrush);
-        ctx.CreateSolidColorBrush(Subtle, brushProperties: null, out var subBrush);
-        ctx.CreateSolidColorBrush(Accent, brushProperties: null, out var accBrush);
-        ctx.CreateSolidColorBrush(Divider, brushProperties: null, out var divBrush);
-        ctx.CreateSolidColorBrush(Hint, brushProperties: null, out var hintBrush);
+        ctx.CreateSolidColorBrush(_background, brushProperties: null, out var bgBrush);
+        ctx.CreateSolidColorBrush(_foreground, brushProperties: null, out var fgBrush);
+        ctx.CreateSolidColorBrush(_subtle, brushProperties: null, out var subBrush);
+        ctx.CreateSolidColorBrush(_accent, brushProperties: null, out var accBrush);
+        ctx.CreateSolidColorBrush(_divider, brushProperties: null, out var divBrush);
+        ctx.CreateSolidColorBrush(_hint, brushProperties: null, out var hintBrush);
         try
         {
             FillBackground(ctx, bgBrush);

@@ -59,14 +59,19 @@ public sealed partial class RenderClock : IAsyncDisposable
     public RenderTiming Timing { get; }
     public RenderStats Stats { get; }
 
-    public RenderClock(Compositor compositor, RenderTiming timing, Action onTick)
+    public RenderClock(
+        Compositor compositor,
+        RenderTiming timing,
+        Action onTick,
+        double warnRatio = RenderBudget.DefaultWarnRatio
+    )
     {
         ArgumentNullException.ThrowIfNull(compositor);
         ArgumentNullException.ThrowIfNull(onTick);
         _compositor = compositor;
         Timing = timing;
         Stats = new RenderStats();
-        _budget = new RenderBudget(timing, Stats, Log);
+        _budget = new RenderBudget(timing, Stats, Log, warnRatio);
         _onTick = onTick;
         // Two display frames is the practical ceiling: shorter and a single
         // slow commit on the GPU side false-positives; longer and a real

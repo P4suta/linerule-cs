@@ -1,4 +1,5 @@
 using System;
+using Linerule.Config;
 using Linerule.Core;
 using Linerule.Platform;
 using Linerule.Platform.Windows.Diagnostics;
@@ -60,10 +61,10 @@ internal sealed partial class HotkeyRepeater : IDisposable
 {
     private static readonly LoggerHandle Log = Logger.For(Subsystems.Hotkey);
 
-    private const int InitialDelayMs = 250;
-    private const int LongPressThresholdMs = 250;
-    private const int SlowRepeatIntervalMs = 400;
-    private const int ReleasePollIntervalMs = 50;
+    private readonly int _initialDelayMs;
+    private readonly int _longPressThresholdMs;
+    private readonly int _slowRepeatIntervalMs;
+    private readonly int _releasePollIntervalMs;
 
     private readonly HotkeyHost _host;
     private readonly DispatcherQueueTimer _timer;
@@ -104,11 +105,21 @@ internal sealed partial class HotkeyRepeater : IDisposable
         Slow,
     }
 
-    public HotkeyRepeater(DispatcherQueue queue, HotkeyHost host, Func<OverlayAction, bool> wouldAffectState)
+    public HotkeyRepeater(
+        DispatcherQueue queue,
+        HotkeyHost host,
+        Func<OverlayAction, bool> wouldAffectState,
+        RepeatConfig repeatCfg
+    )
     {
         ArgumentNullException.ThrowIfNull(queue);
         ArgumentNullException.ThrowIfNull(host);
         ArgumentNullException.ThrowIfNull(wouldAffectState);
+        ArgumentNullException.ThrowIfNull(repeatCfg);
+        _initialDelayMs = repeatCfg.InitialDelayMs;
+        _longPressThresholdMs = repeatCfg.LongPressThresholdMs;
+        _slowRepeatIntervalMs = repeatCfg.SlowRepeatIntervalMs;
+        _releasePollIntervalMs = repeatCfg.ReleasePollMs;
         _host = host;
         _wouldAffectState = wouldAffectState;
         _timer = queue.CreateTimer();
@@ -180,7 +191,7 @@ internal sealed partial class HotkeyRepeater : IDisposable
         _repeatAction = stepAction;
         _undoAction = null;
         _holdStartMs = Environment.TickCount64;
-        _timer.Interval = TimeSpan.FromMilliseconds(InitialDelayMs);
+        _timer.Interval = TimeSpan.FromMilliseconds(_initialDelayMs);
         _timer.Start();
     }
 
@@ -192,7 +203,7 @@ internal sealed partial class HotkeyRepeater : IDisposable
         _undoAction = undoAction;
         _holdStartMs = Environment.TickCount64;
         // Steady poll for release detection — no acceleration needed.
-        _timer.Interval = TimeSpan.FromMilliseconds(ReleasePollIntervalMs);
+        _timer.Interval = TimeSpan.FromMilliseconds(_releasePollIntervalMs);
         _timer.Start();
     }
 
@@ -233,7 +244,7 @@ internal sealed partial class HotkeyRepeater : IDisposable
             case HoldKind.LongPressUndo:
                 // Keep polling at the same fixed cadence; nothing fires
                 // while held, only on release.
-                _timer.Interval = TimeSpan.FromMilliseconds(ReleasePollIntervalMs);
+                _timer.Interval = TimeSpan.FromMilliseconds(_releasePollIntervalMs);
                 break;
             case HoldKind.None:
                 _timer.Stop();
@@ -250,7 +261,7 @@ internal sealed partial class HotkeyRepeater : IDisposable
         if (_holdKind == HoldKind.LongPressUndo && _undoAction is not null)
         {
             var heldMs = Environment.TickCount64 - _holdStartMs;
-            if (heldMs >= LongPressThresholdMs)
+            if (heldMs >= _longPressThresholdMs)
             {
                 _host.Enqueue(_undoAction);
             }
@@ -272,9 +283,9 @@ internal sealed partial class HotkeyRepeater : IDisposable
     /// meant for small finite enums like Mode where rapid cycling would
     /// just loop.
     /// </summary>
-    private static (TimeSpan Interval, int StepMagnitude) ComputeNextStep(long heldMs, RepeatCadence cadence) =>
+    private (TimeSpan Interval, int StepMagnitude) ComputeNextStep(long heldMs, RepeatCadence cadence) =>
         cadence == RepeatCadence.Slow
-            ? (TimeSpan.FromMilliseconds(SlowRepeatIntervalMs), 1)
+            ? (TimeSpan.FromMilliseconds(_slowRepeatIntervalMs), 1)
             : heldMs switch
             {
                 < 1000 => (TimeSpan.FromMilliseconds(50), 1), // 20 Hz × 1 — micro
