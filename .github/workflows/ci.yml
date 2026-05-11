@@ -35,7 +35,12 @@ jobs:
         with:
           global-json-file: global.json
           cache: true
-          cache-dependency-path: '**/packages.lock.json'
+          # Repo does not (yet) generate NuGet packages.lock.json. Key the
+          # cache on Central Package Management (single point of version
+          # truth) plus global.json (SDK pin) instead.
+          cache-dependency-path: |
+            **/Directory.Packages.props
+            global.json
 
       - run: dotnet restore --locked-mode || dotnet restore
       - run: dotnet build -c Release --no-restore --nologo
@@ -83,7 +88,9 @@ jobs:
         with:
           global-json-file: global.json
           cache: true
-          cache-dependency-path: '**/packages.lock.json'
+          cache-dependency-path: |
+            **/Directory.Packages.props
+            global.json
 
       - run: dotnet restore
       - run: dotnet build -c Release --no-restore --nologo
