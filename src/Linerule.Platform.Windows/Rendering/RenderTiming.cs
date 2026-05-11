@@ -7,48 +7,41 @@ using Windows.Win32.Graphics.Gdi;
 namespace Linerule.Platform.Windows.Rendering;
 
 /// <summary>
-/// Display-refresh-derived render timing. All four fields are causally
-/// linked — change one and the rest fall out — so they live together as
-/// an immutable record. Construct via <see cref="Probe"/> rather than the
-/// primary constructor unless you need to inject a synthetic value (tests).
+/// Display-refresh-derived render timing. <see cref="DisplayRefreshHz"/>
+/// is probed at startup; <see cref="FrameBudget"/> is its reciprocal and
+/// drives the per-frame budget guard + the commit-await timeout ceiling.
 ///
 /// <para>
-/// <b>Rationale</b>: previous iterations hard-coded 16 ms then 8 ms tick
-/// intervals. Both ignored the actual display refresh rate, so on a 144 Hz
-/// monitor the overlay was visibly choppy and on a 60 Hz monitor it
-/// over-polled. User feedback 2026-05-11 ("ガクガクしている") was the trigger
-/// to lift this out of magic-number territory.
-/// </para>
-///
-/// <para>
-/// <b>Tick rate policy</b>: tick at <c>min(2 × refresh, 250) Hz</c>, so we
-/// never miss a vsync (Nyquist) but stay below the rate at which
-/// <see cref="System.Diagnostics.Stopwatch"/> jitter and DispatcherQueueTimer
-/// granularity start to dominate. Cap at 250 Hz because 240 Hz monitors
-/// exist and we want one extra cycle of headroom.
+/// <b>What this no longer carries</b>: the previous incarnation also held
+/// <c>TickRateHz</c> + <c>TickInterval</c> to schedule a
+/// <see cref="Microsoft.UI.Dispatching.DispatcherQueueTimer"/>. The tick
+/// rate is no longer a policy — <see cref="RenderClock"/> drives ticks
+/// off the compositor's own commit cycle via
+/// <c>Compositor.RequestCommitAsync</c>, so the cadence equals the
+/// display refresh by construction. Removing the field eliminates the
+/// "what tick multiplier should we pick" tuning knob (which never had a
+/// principled answer) and prevents the
+/// tick-clock / display-clock phase drift that produced the
+/// frame-to-frame jitter described in ADR-0009 v3.
 /// </para>
 ///
 /// <para>
 /// <b>Frame budget</b>: <c>1 / refresh</c>. A tick that exceeds half this
 /// budget is logged as a warning by <see cref="RenderBudget"/> — that is
-/// the threshold at which we are at risk of dropping the next display frame.
+/// the threshold at which we are at risk of dropping the next display
+/// frame. The same value × 2 is reused as
+/// <see cref="RenderClock"/>'s commit-await timeout, bounding any stall
+/// (RDP / locked session / minimized) to two display frames.
 /// </para>
 /// </summary>
 [StructLayout(LayoutKind.Auto)]
-public readonly record struct RenderTiming(
-    int DisplayRefreshHz,
-    int TickRateHz,
-    TimeSpan TickInterval,
-    TimeSpan FrameBudget
-)
+public readonly record struct RenderTiming(int DisplayRefreshHz, TimeSpan FrameBudget)
 {
     private const int FallbackRefreshHz = 60;
-    private const int TickMultiplier = 2;
-    private const int TickRateCapHz = 250;
 
     /// <summary>
-    /// Query the primary display's refresh rate and derive the tick + budget
-    /// numbers. Falls back to 60 Hz if the OS query fails.
+    /// Query the primary display's refresh rate and derive the budget.
+    /// Falls back to 60 Hz if the OS query fails.
     /// </summary>
     public static RenderTiming Probe(LoggerHandle log)
     {
@@ -60,18 +53,12 @@ public readonly record struct RenderTiming(
     /// <summary>
     /// Build the timing tuple from a known refresh rate. Public for tests
     /// and for callers that want to override the probe (e.g. force a 60 Hz
-    /// tick in CI).
+    /// budget in CI).
     /// </summary>
     public static RenderTiming ForRefreshHz(int refreshHz)
     {
         var hz = refreshHz < 1 ? FallbackRefreshHz : refreshHz;
-        var tickHz = Math.Min(hz * TickMultiplier, TickRateCapHz);
-        return new RenderTiming(
-            DisplayRefreshHz: hz,
-            TickRateHz: tickHz,
-            TickInterval: TimeSpan.FromMilliseconds(1000.0 / tickHz),
-            FrameBudget: TimeSpan.FromMilliseconds(1000.0 / hz)
-        );
+        return new RenderTiming(DisplayRefreshHz: hz, FrameBudget: TimeSpan.FromMilliseconds(1000.0 / hz));
     }
 
     private static unsafe int ProbePrimaryRefreshHz(LoggerHandle log)

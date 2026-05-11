@@ -479,7 +479,7 @@ internal sealed partial class HudRenderer : IDisposable
     {
         var line = string.Create(
             CultureInfo.InvariantCulture,
-            $"{t.DisplayHz}Hz · tick {t.TickHz}Hz · p99 {t.TickP99Ms:F2}ms · drops {t.FramesDropped}"
+            $"{t.DisplayHz}Hz · p99 {t.TickP99Ms:F2}ms · drops {t.FramesDropped} · stalls {t.CommitTimeouts}"
         );
         DrawTextAt(ctx, brush, _telemetryFormat, x, y, line);
         return y + _layout.FontSizes.Telemetry + _layout.Padding.Section;

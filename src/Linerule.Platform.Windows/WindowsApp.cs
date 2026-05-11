@@ -117,7 +117,7 @@ public static partial class WindowsApp
         await using var registration = cancellationToken.Register(queue.EnqueueEventLoopExit);
         var timing = RenderTiming.Probe(Log);
         using var hud = CreateHud(overlay);
-        using var loop = new TickLoop(overlay, hotkeys, cursor, queue, timing, hud, config.Hotkeys);
+        await using var loop = new TickLoop(overlay, hotkeys, cursor, queue, timing, hud, config.Hotkeys);
         loop.Start();
 
         // Hand the loop's state to CrashDump so post-mortem includes the
@@ -292,13 +292,15 @@ public static partial class WindowsApp
     /// poll — this is the right place for it because the hotkey host already
     /// queues asynchronously, so latency is "next tick" worst case.
     /// </summary>
-    private sealed partial class TickLoop : IDisposable
+    private sealed partial class TickLoop : IAsyncDisposable
     {
-        // Refresh the HUD's telemetry section every Nth tick — once per
-        // ~200 ms at 125 Hz tick rate. The status section is event-driven
-        // (refreshed on state change) so this counter only paces the
-        // "FPS / dropped frames" line.
-        private const int HudTelemetryRefreshEvery = 25;
+        // HUD telemetry (FPS / dropped frames / commit timeouts) is paced
+        // by wall-clock elapsed, not by tick count — because under
+        // vsync-aligned scheduling the tick rate equals the display
+        // refresh, which can vary (60 / 120 / 144 / 165 / 240 Hz) and
+        // even fluctuate at runtime. 200 ms is the human-perceptible
+        // refresh cadence target.
+        private const long HudTelemetryRefreshIntervalMs = 200;
 
         private readonly OverlayWindow _overlay;
         private readonly HotkeyHost _hotkeys;
@@ -310,7 +312,7 @@ public static partial class WindowsApp
         private State _state = State.Default;
         private Point<Logical>? _lastCursor;
         private long _frameSeq;
-        private long _hudTelemetryTick;
+        private long _lastHudRefreshAtMs;
         private bool _disposed;
 
         public TickLoop(
@@ -327,7 +329,7 @@ public static partial class WindowsApp
             _hotkeys = hotkeys;
             _cursor = cursor;
             _queue = queue;
-            _clock = new RenderClock(queue, timing, OnTick);
+            _clock = new RenderClock(overlay.Compositor, timing, OnTick);
             _hud = hud;
             _hotkeyMap = hotkeyMap;
         }
@@ -336,19 +338,20 @@ public static partial class WindowsApp
         {
             ApplyFrame();
             RefreshHud();
+            _lastHudRefreshAtMs = Environment.TickCount64;
             _clock.Start();
         }
 
         public void Stop() => _clock.Stop();
 
-        public void Dispose()
+        public async ValueTask DisposeAsync()
         {
             if (_disposed)
             {
                 return;
             }
             _disposed = true;
-            _clock.Dispose();
+            await _clock.DisposeAsync().ConfigureAwait(false);
         }
 
         /// <summary>
@@ -368,12 +371,12 @@ public static partial class WindowsApp
                 new LogField("cursor_y", _lastCursor?.Y ?? 0),
                 new LogField("frame_seq", Volatile.Read(ref _frameSeq)),
                 new LogField("display_hz", _clock.Timing.DisplayRefreshHz),
-                new LogField("tick_hz", _clock.Timing.TickRateHz),
                 new LogField("tick_p50_ms", stats.P50.TotalMilliseconds),
                 new LogField("tick_p99_ms", stats.P99.TotalMilliseconds),
                 new LogField("tick_max_ms", stats.Max.TotalMilliseconds),
                 new LogField("frames_total", stats.TotalFrames),
                 new LogField("frames_dropped", stats.DroppedFrames),
+                new LogField("commit_timeouts", stats.CommitTimeouts),
             ];
         }
 
@@ -416,10 +419,14 @@ public static partial class WindowsApp
             }
 
             // Periodic telemetry refresh — no state change, but the FPS /
-            // p99 / dropped-frames numbers in the HUD slowly drift. HUD's
-            // own equality gate ensures we don't redraw if nothing moved.
-            if (++_hudTelemetryTick % HudTelemetryRefreshEvery == 0)
+            // p99 / dropped-frames numbers in the HUD slowly drift. Paced
+            // by wall-clock elapsed (not tick count) so the refresh
+            // cadence is invariant under display-Hz changes. HUD's own
+            // equality gate ensures we don't redraw if nothing moved.
+            var nowMs = Environment.TickCount64;
+            if (nowMs - _lastHudRefreshAtMs >= HudTelemetryRefreshIntervalMs)
             {
+                _lastHudRefreshAtMs = nowMs;
                 RefreshHud();
             }
         }

@@ -13,6 +13,7 @@ public readonly record struct RenderStatsSnapshot(
     int SampleCount,
     long TotalFrames,
     long DroppedFrames,
+    long CommitTimeouts,
     TimeSpan Min,
     TimeSpan Mean,
     TimeSpan P50,
@@ -22,5 +23,5 @@ public readonly record struct RenderStatsSnapshot(
 )
 {
     public static RenderStatsSnapshot Empty { get; } =
-        new(0, 0, 0, TimeSpan.Zero, TimeSpan.Zero, TimeSpan.Zero, TimeSpan.Zero, TimeSpan.Zero, TimeSpan.Zero);
+        new(0, 0, 0, 0, TimeSpan.Zero, TimeSpan.Zero, TimeSpan.Zero, TimeSpan.Zero, TimeSpan.Zero, TimeSpan.Zero);
 }

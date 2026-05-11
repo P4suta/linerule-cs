@@ -1,4 +1,3 @@
-using System;
 using Linerule.Platform.Windows.Rendering;
 
 namespace Linerule.Platform.Windows.Tests.Rendering;
@@ -6,39 +5,27 @@ namespace Linerule.Platform.Windows.Tests.Rendering;
 public sealed class RenderTimingTests
 {
     [Fact]
-    public void ForRefreshHz_60_gives_120_Hz_tick_and_16_67_ms_budget()
+    public void ForRefreshHz_60_yields_16_67_ms_budget()
     {
         var t = RenderTiming.ForRefreshHz(60);
         Assert.Equal(60, t.DisplayRefreshHz);
-        Assert.Equal(120, t.TickRateHz);
-        Assert.InRange(t.TickInterval.TotalMilliseconds, 8.32, 8.34);
         Assert.InRange(t.FrameBudget.TotalMilliseconds, 16.66, 16.68);
     }
 
     [Fact]
-    public void ForRefreshHz_144_gives_250_Hz_tick_capped_not_288()
+    public void ForRefreshHz_144_yields_6_94_ms_budget()
     {
         var t = RenderTiming.ForRefreshHz(144);
         Assert.Equal(144, t.DisplayRefreshHz);
-        // 144 × 2 = 288 → capped at 250.
-        Assert.Equal(250, t.TickRateHz);
-        Assert.InRange(t.TickInterval.TotalMilliseconds, 3.99, 4.01);
         Assert.InRange(t.FrameBudget.TotalMilliseconds, 6.94, 6.95);
     }
 
     [Fact]
-    public void ForRefreshHz_240_gives_250_Hz_tick_capped()
+    public void ForRefreshHz_240_yields_4_17_ms_budget()
     {
         var t = RenderTiming.ForRefreshHz(240);
         Assert.Equal(240, t.DisplayRefreshHz);
-        Assert.Equal(250, t.TickRateHz);
-    }
-
-    [Fact]
-    public void ForRefreshHz_120_gives_240_Hz_tick_under_cap()
-    {
-        var t = RenderTiming.ForRefreshHz(120);
-        Assert.Equal(240, t.TickRateHz);
+        Assert.InRange(t.FrameBudget.TotalMilliseconds, 4.16, 4.17);
     }
 
     [Theory]
@@ -48,23 +35,18 @@ public sealed class RenderTimingTests
     {
         var t = RenderTiming.ForRefreshHz(hz);
         Assert.Equal(60, t.DisplayRefreshHz);
-        Assert.Equal(120, t.TickRateHz);
+        Assert.InRange(t.FrameBudget.TotalMilliseconds, 16.66, 16.68);
     }
 
     [Fact]
-    public void TickInterval_strictly_smaller_than_FrameBudget()
+    public void FrameBudget_is_inverse_of_DisplayRefreshHz()
     {
-        // The whole point of tick > 1× refresh is that we never miss a vsync.
+        // 1 / refresh × 1000 ms — the single algebraic relationship the
+        // record represents. Cover the practical refresh-rate spread.
         foreach (var hz in new[] { 30, 60, 90, 120, 144, 165, 240 })
         {
             var t = RenderTiming.ForRefreshHz(hz);
-            Assert.True(
-                t.TickInterval < t.FrameBudget,
-                string.Create(
-                    System.Globalization.CultureInfo.InvariantCulture,
-                    $"refresh={hz}: tick={t.TickInterval.TotalMilliseconds}ms must be < budget={t.FrameBudget.TotalMilliseconds}ms"
-                )
-            );
+            Assert.InRange(t.FrameBudget.TotalMilliseconds, (1000.0 / hz) - 0.01, (1000.0 / hz) + 0.01);
         }
     }
 }

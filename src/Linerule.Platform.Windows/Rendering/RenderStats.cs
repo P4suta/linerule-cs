@@ -33,10 +33,18 @@ public sealed class RenderStats
     private int _count;
     private long _totalFrames;
     private long _droppedFrames;
+    private long _commitTimeouts;
 
     public int Capacity => _samples.Length;
     public long TotalFrames => Interlocked.Read(ref _totalFrames);
     public long DroppedFrames => Interlocked.Read(ref _droppedFrames);
+
+    /// <summary>
+    /// Total number of times the render loop's commit-await timeout fired
+    /// (compositor stalled — RDP / locked session / minimized window).
+    /// Steady-state on a normal desktop should stay at 0.
+    /// </summary>
+    public long CommitTimeouts => Interlocked.Read(ref _commitTimeouts);
 
     public RenderStats(int capacity = DefaultCapacity)
     {
@@ -63,6 +71,12 @@ public sealed class RenderStats
     public void RecordDrop() => Interlocked.Increment(ref _droppedFrames);
 
     /// <summary>
+    /// Mark one commit-await timeout (compositor failed to fire within the
+    /// configured ceiling — see <see cref="RenderClock"/>).
+    /// </summary>
+    public void RecordCommitTimeout() => Interlocked.Increment(ref _commitTimeouts);
+
+    /// <summary>
     /// Snapshot the rolling window. Returns the empty snapshot if no
     /// samples have been recorded yet (avoids "what is the p99 of nothing"
     /// undefined behavior at startup).
@@ -76,10 +90,15 @@ public sealed class RenderStats
             n = _count;
             if (n == 0)
             {
-                // No frame samples yet — but RecordDrop() may still have
-                // accrued. Return a snapshot with zero timing values plus
-                // the live counters so DroppedFrames isn't lost.
-                return RenderStatsSnapshot.Empty with { TotalFrames = TotalFrames, DroppedFrames = DroppedFrames };
+                // No frame samples yet — but RecordDrop() / RecordCommitTimeout()
+                // may still have accrued. Return a snapshot with zero timing
+                // values plus the live counters so they aren't lost.
+                return RenderStatsSnapshot.Empty with
+                {
+                    TotalFrames = TotalFrames,
+                    DroppedFrames = DroppedFrames,
+                    CommitTimeouts = CommitTimeouts,
+                };
             }
             copy = new long[n];
             // Linearize the ring into ascending-time order for percentile
@@ -103,6 +122,7 @@ public sealed class RenderStats
             SampleCount: n,
             TotalFrames: TotalFrames,
             DroppedFrames: DroppedFrames,
+            CommitTimeouts: CommitTimeouts,
             Min: TimeSpan.FromTicks(min),
             Mean: TimeSpan.FromTicks(sum / n),
             P50: TimeSpan.FromTicks(copy[Index(n, 0.50)]),

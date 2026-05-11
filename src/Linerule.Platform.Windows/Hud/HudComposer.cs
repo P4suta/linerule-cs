@@ -53,9 +53,9 @@ public static class HudComposer
     private static HudTelemetry BuildTelemetry(RenderStatsSnapshot stats, RenderTiming timing) =>
         new(
             DisplayHz: timing.DisplayRefreshHz,
-            TickHz: timing.TickRateHz,
             TickP99Ms: stats.P99.TotalMilliseconds,
-            FramesDropped: stats.DroppedFrames
+            FramesDropped: stats.DroppedFrames,
+            CommitTimeouts: stats.CommitTimeouts
         );
 
     private static int ToPercent(int value, int max) =>
