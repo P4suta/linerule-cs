@@ -15,10 +15,6 @@ public abstract record HoldEffect
     private protected HoldEffect() { }
 
     /// <summary>Enqueue an <see cref="OverlayAction"/> to the host queue.</summary>
-    /// <remarks>
-    /// Renamed from <c>Emit</c> to avoid the CA1724 collision with the BCL
-    /// <c>System.Reflection.Emit</c> namespace; semantics unchanged.
-    /// </remarks>
     public sealed record Enqueue(OverlayAction Action) : HoldEffect;
 
     /// <summary>Reschedule the next FSM tick at the given interval.</summary>
