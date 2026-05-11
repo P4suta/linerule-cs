@@ -117,7 +117,7 @@ internal sealed partial class HotkeyRepeater : IDisposable
                     _timer.Interval = sched.Next;
                     _timer.Start();
                     break;
-                case HoldEffect.Stop:
+                case HoldEffect.Halt:
                     _timer.Stop();
                     break;
                 default:

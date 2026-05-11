@@ -15,18 +15,14 @@ public abstract record HoldEffect
     private protected HoldEffect() { }
 
     /// <summary>Enqueue an <see cref="OverlayAction"/> to the host queue.</summary>
-    /// <remarks>
-    /// Renamed from <c>Emit</c> to avoid the CA1724 collision with the BCL
-    /// <c>System.Reflection.Emit</c> namespace; semantics unchanged.
-    /// </remarks>
     public sealed record Enqueue(OverlayAction Action) : HoldEffect;
 
     /// <summary>Reschedule the next FSM tick at the given interval.</summary>
     public sealed record Schedule(TimeSpan Next) : HoldEffect;
 
-    /// <summary>Stop the poll timer; the FSM is in a terminal state.</summary>
-    public sealed record Stop : HoldEffect
+    /// <summary>Halt the poll timer; the FSM is in a terminal state.</summary>
+    public sealed record Halt : HoldEffect
     {
-        public static Stop Instance { get; } = new();
+        public static Halt Instance { get; } = new();
     }
 }

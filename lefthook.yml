@@ -1,6 +1,11 @@
 # lefthook — git hooks runner.
 # Install once with: `lefthook install` (memory: 2026-wave dev tooling).
-# Strict: every hook is a hard fail. No "skip on failure".
+#
+# Pre-commit policy: anything a tool can fix mechanically (formatting,
+# canonical spelling) is fixed in-place and re-staged. Only checks that
+# need human judgment (strict-code violations, malformed workflow YAML,
+# bad commit-msg headers) fail the commit. This keeps the hook a help,
+# not a hurdle.
 
 # Tools assumed on PATH (mise-managed in the user's WSL env):
 #   csharpier (via `dotnet tool restore` + `dotnet csharpier`)
@@ -14,29 +19,36 @@ no_tty: false
 colors: true
 
 pre-commit:
-  parallel: true
+  # Serial so fixers cannot race each other on the same file. Each step
+  # restages its writes; the next step sees the canonical form.
+  parallel: false
   follow: true
   commands:
-    csharpier-check:
+    csharpier-format:
       tags: format
       glob: "*.cs"
-      run: dotnet csharpier check {staged_files}
-      stage_fixed: false
+      run: dotnet csharpier format {staged_files}
+      stage_fixed: true
 
     dotnet-format-style:
       tags: lint
       glob: "*.cs"
-      run: dotnet format style --verify-no-changes --include {staged_files} --no-restore
+      run: dotnet format style --include {staged_files} --no-restore
+      stage_fixed: true
 
     dotnet-format-analyzers:
       tags: lint
       glob: "*.cs"
-      run: dotnet format analyzers --verify-no-changes --include {staged_files} --no-restore
+      run: dotnet format analyzers --include {staged_files} --no-restore
+      stage_fixed: true
 
-    typos:
+    typos-fix:
       tags: spell
-      run: typos --color always {staged_files}
+      run: typos --write-changes {staged_files}
+      stage_fixed: true
 
+    # Below this line: checks only — these report violations the author has
+    # to address, because no mechanical fix is safe.
     actionlint:
       tags: ci
       glob: "{.github/workflows/*.yml,.github/workflows/*.yaml}"

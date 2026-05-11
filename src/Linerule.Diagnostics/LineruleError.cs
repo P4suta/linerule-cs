@@ -49,7 +49,7 @@ public abstract record LineruleError
     /// Catch-all for runtime failures that don't have a dedicated layer
     /// error (e.g. a Win32 / WinAppSDK callback that threw). Carries the
     /// originating site label and the captured exception (may be null when
-    /// the failure was synthesised, e.g. a cancellation).
+    /// the failure was synthesized, e.g. a cancellation).
     /// </summary>
     public sealed record Unexpected(string Where, Exception? Cause) : LineruleError;
 
