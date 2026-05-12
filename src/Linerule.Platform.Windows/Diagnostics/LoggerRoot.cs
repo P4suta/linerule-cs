@@ -103,17 +103,11 @@ public sealed class LoggerRoot : IAsyncDisposable
 
     /// <summary>
     /// Best-effort discovery of a sink's on-disk path (e.g. SqliteEventSink.Path).
-    /// Reflection is acceptable here: bootstrap-once, not a hot path.
+    /// Typed dispatch via <see cref="IPathfulSink"/>; previously used reflection
+    /// (<c>GetType().GetProperty("Path")</c>) which is IL2075-unsafe under AOT
+    /// (ADR-0010).
     /// </summary>
-    private static string? ExtractPath(ILogSink? sink)
-    {
-        if (sink is null)
-        {
-            return null;
-        }
-        var prop = sink.GetType().GetProperty("Path");
-        return prop?.GetValue(sink) as string;
-    }
+    private static string? ExtractPath(ILogSink? sink) => sink is IPathfulSink p ? p.Path : null;
 
     private static LogLevel BuildConfigDefaultLevel() =>
 #if DEBUG

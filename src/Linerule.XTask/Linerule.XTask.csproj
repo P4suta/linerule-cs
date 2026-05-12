@@ -12,4 +12,8 @@
     <PackageReference Include="Spectre.Console" />
     <PackageReference Include="System.CommandLine" />
   </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Linerule.XTask.Tests" />
+  </ItemGroup>
 </Project>

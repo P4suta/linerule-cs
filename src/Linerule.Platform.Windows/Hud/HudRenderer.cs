@@ -2,39 +2,36 @@ using System;
 using System.Collections.Immutable;
 using System.Globalization;
 using System.Runtime.InteropServices;
-using Linerule.Config;
 using Linerule.Core;
 using Linerule.Platform.Windows.Diagnostics;
-using Linerule.Platform.Windows.Win32;
-using Windows.Foundation;
-using Windows.Graphics.DirectX;
-using Windows.UI.Composition;
 using Windows.Win32;
+using Windows.Win32.Foundation;
 using Windows.Win32.Graphics.Direct2D;
 using Windows.Win32.Graphics.Direct2D.Common;
-using Windows.Win32.Graphics.Direct3D;
 using Windows.Win32.Graphics.Direct3D11;
+using Windows.Win32.Graphics.DirectComposition;
 using Windows.Win32.Graphics.DirectWrite;
 using Windows.Win32.Graphics.Dxgi;
+using Windows.Win32.Graphics.Dxgi.Common;
 
 namespace Linerule.Platform.Windows.Hud;
 
 /// <summary>
 /// Direct2D + DirectWrite HUD painter sitting on a
-/// <see cref="CompositionDrawingSurface"/>. All native types are
+/// <see cref="IDCompositionSurface"/>. All native types are
 /// source-gen'd by <c>Microsoft.Windows.CsWin32</c> from
 /// <c>NativeMethods.txt</c> — third-party D2D wrappers (Win2D, Vortice,
-/// SharpDX, …) are deliberately not in the picture. See ADR-0009 v3.
+/// SharpDX, …) are deliberately not in the picture. See ADR-0009 (dcomp
+/// direct, post-Phase-2) and ADR-0010.
 ///
 /// <para>
 /// <b>Device chain</b>:
 /// <c>D3D11CreateDevice(BGRA_SUPPORT)</c> → <c>IDXGIDevice</c> →
-/// <c>ID2D1Factory1.CreateDevice</c> → <c>ID2D1Device</c>. The device is
-/// handed to <see cref="ICompositorInterop.CreateGraphicsDevice"/> which
-/// returns a <see cref="CompositionGraphicsDevice"/>; that mints the
-/// <see cref="CompositionDrawingSurface"/> the HUD draws into. Each
+/// <c>ID2D1Factory1.CreateDevice</c> → <c>ID2D1Device</c>. The HUD's
+/// <see cref="IDCompositionSurface"/> is created directly from the
+/// shared <see cref="IDCompositionDesktopDevice"/>. Each
 /// <see cref="Draw"/> opens a fresh <c>ID2D1DeviceContext</c> via
-/// <see cref="ICompositionDrawingSurfaceInterop.BeginDraw"/>.
+/// <c>IDCompositionSurface.BeginDraw(IID_ID2D1DeviceContext, …)</c>.
 /// </para>
 ///
 /// <para>
@@ -96,9 +93,7 @@ internal sealed partial class HudRenderer : IDisposable
     );
 
     private readonly HudLayout _layout;
-    private readonly ID3D11Device _d3dDevice;
     private readonly ID2D1Device _d2dDevice;
-    private readonly CompositionGraphicsDevice _graphicsDevice;
     private readonly IDWriteFactory _dwriteFactory;
     private readonly IDWriteTextFormat _titleFormat;
     private readonly IDWriteTextFormat _statusFormat;
@@ -106,11 +101,18 @@ internal sealed partial class HudRenderer : IDisposable
     private readonly IDWriteTextFormat _telemetryFormat;
     private bool _disposed;
 
-    public CompositionDrawingSurface Surface { get; }
+    public IDCompositionSurface Surface { get; }
 
-    public HudRenderer(Compositor compositor, HudLayout layout, HudConfig hudCfg, LoggerHandle log)
+    public HudRenderer(
+        IDCompositionDesktopDevice device,
+        ID3D11Device d3dDevice,
+        HudLayout layout,
+        HudConfig hudCfg,
+        LoggerHandle log
+    )
     {
-        ArgumentNullException.ThrowIfNull(compositor);
+        ArgumentNullException.ThrowIfNull(device);
+        ArgumentNullException.ThrowIfNull(d3dDevice);
         ArgumentNullException.ThrowIfNull(hudCfg);
         _log = log;
         _layout = layout;
@@ -122,10 +124,8 @@ internal sealed partial class HudRenderer : IDisposable
         _hint = ToColorF(hudCfg.Colors.Hint);
         _divider = ToColorF(hudCfg.Colors.Divider);
 
-        _d3dDevice = CreateD3D11Device();
-        _d2dDevice = CreateD2DDevice(_d3dDevice);
-        _graphicsDevice = CreateGraphicsDevice(compositor, _d2dDevice);
-        Surface = CreateDrawingSurface(_graphicsDevice, layout);
+        _d2dDevice = CreateD2DDevice(d3dDevice);
+        Surface = CreateDcompSurface(device, layout);
         _dwriteFactory = CreateDWriteFactory();
         (_titleFormat, _statusFormat, _bodyFormat, _telemetryFormat) = CreateTextFormats(
             _dwriteFactory,
@@ -150,31 +150,11 @@ internal sealed partial class HudRenderer : IDisposable
             a = c.A / 255f,
         };
 
-    private static unsafe ID3D11Device CreateD3D11Device()
-    {
-        var featureLevels = stackalloc D3D_FEATURE_LEVEL[]
-        {
-            D3D_FEATURE_LEVEL.D3D_FEATURE_LEVEL_11_1,
-            D3D_FEATURE_LEVEL.D3D_FEATURE_LEVEL_11_0,
-        };
-        D3D_FEATURE_LEVEL chosenLevel;
-        var hr = PInvoke.D3D11CreateDevice(
-            pAdapter: null,
-            DriverType: D3D_DRIVER_TYPE.D3D_DRIVER_TYPE_HARDWARE,
-            Software: default,
-            Flags: D3D11_CREATE_DEVICE_FLAG.D3D11_CREATE_DEVICE_BGRA_SUPPORT
-                | D3D11_CREATE_DEVICE_FLAG.D3D11_CREATE_DEVICE_SINGLETHREADED,
-            pFeatureLevels: featureLevels,
-            FeatureLevels: 2,
-            SDKVersion: 7,
-            ppDevice: out var d3dDevice,
-            pFeatureLevel: &chosenLevel,
-            ppImmediateContext: out _
-        );
-        hr.ThrowOnFailure();
-        return d3dDevice!;
-    }
-
+    [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage(
+        "Trimming",
+        "IL2050:Correctness of COM interop cannot be guaranteed after trimming.",
+        Justification = "ADR-0010: Platform.Windows is IsAotCompatible=false by design; D3D11/D2D/DWrite is the COM-boundary contract."
+    )]
     private static unsafe ID2D1Device CreateD2DDevice(ID3D11Device d3dDevice)
     {
         var dxgiDevice = (IDXGIDevice)d3dDevice;
@@ -192,43 +172,28 @@ internal sealed partial class HudRenderer : IDisposable
         return d2dDevice;
     }
 
-    private static CompositionGraphicsDevice CreateGraphicsDevice(Compositor compositor, ID2D1Device d2dDevice)
+    /// <summary>
+    /// Mint the dcomp surface the HUD draws into. The size matches the HUD
+    /// layout in physical pixels; the surface is BGRA8 / premultiplied to
+    /// match the D2D device context produced by BeginDraw.
+    /// </summary>
+    private static IDCompositionSurface CreateDcompSurface(IDCompositionDesktopDevice device, HudLayout layout)
     {
-        var compositorInterop = (ICompositorInterop)(object)compositor;
-        var d2dDevicePtr = Marshal.GetIUnknownForObject(d2dDevice);
-        IntPtr graphicsPtr;
-        try
-        {
-            compositorInterop.CreateGraphicsDevice(d2dDevicePtr, out graphicsPtr);
-        }
-        finally
-        {
-            Marshal.Release(d2dDevicePtr);
-        }
-        try
-        {
-            // Wrap via CsWinRT — CompositionGraphicsDevice is a WinRT runtime
-            // class, not a COM interface, so a direct managed cast off
-            // Marshal.GetObjectForIUnknown would fail (InvalidCastException
-            // against System.__ComObject — verified 2026-05-11).
-            return global::WinRT.MarshalInspectable<CompositionGraphicsDevice>.FromAbi(graphicsPtr);
-        }
-        finally
-        {
-            Marshal.Release(graphicsPtr);
-        }
+        device.CreateSurface(
+            (uint)Math.Max(1, layout.SizePx.X),
+            (uint)Math.Max(1, layout.SizePx.Y),
+            DXGI_FORMAT.DXGI_FORMAT_B8G8R8A8_UNORM,
+            DXGI_ALPHA_MODE.DXGI_ALPHA_MODE_PREMULTIPLIED,
+            out var surface
+        );
+        return surface;
     }
 
-    private static CompositionDrawingSurface CreateDrawingSurface(CompositionGraphicsDevice device, HudLayout layout) =>
-        // The system Windows.UI.Composition.CompositionGraphicsDevice.CreateDrawingSurface
-        // takes Windows.Foundation.Size (float), unlike the Microsoft.UI variant
-        // which uses Windows.Graphics.SizeInt32.
-        device.CreateDrawingSurface(
-            new Size(layout.SizePx.X, layout.SizePx.Y),
-            DirectXPixelFormat.B8G8R8A8UIntNormalized,
-            DirectXAlphaMode.Premultiplied
-        );
-
+    [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage(
+        "Trimming",
+        "IL2050:Correctness of COM interop cannot be guaranteed after trimming.",
+        Justification = "ADR-0010: Platform.Windows is IsAotCompatible=false by design; D3D11/D2D/DWrite is the COM-boundary contract."
+    )]
     private static unsafe IDWriteFactory CreateDWriteFactory()
     {
         var dwriteIid = typeof(IDWriteFactory).GUID;
@@ -290,38 +255,29 @@ internal sealed partial class HudRenderer : IDisposable
         }
     }
 
-    private void DrawCore(in HudContent content)
+    private unsafe void DrawCore(in HudContent content)
     {
-        var surfaceInterop = (ICompositionDrawingSurfaceInterop)(object)Surface;
-        surfaceInterop.BeginDraw(IntPtr.Zero, IID_ID2D1DeviceContext, out var ctxPtr, out var offset);
-
-        ID2D1DeviceContext? ctx = null;
+        var iid = IID_ID2D1DeviceContext;
+        System.Drawing.Point offset = default;
+        // CsWin32 marshals the BeginDraw out parameter as object (the
+        // [MarshalAs(IUnknown)] attribute is on the interface), so we get
+        // a directly-castable RCW back — no GetUniqueObjectForIUnknown dance.
+        Surface.BeginDraw(updateRect: null, iid: &iid, updateObject: out var ctxObj, updateOffset: &offset);
+        var ctx = (ID2D1DeviceContext)ctxObj;
         try
         {
-            // GetUniqueObjectForIUnknown (vs GetObjectForIUnknown) returns
-            // a fresh RCW per call, never a cached one. BeginDraw can in
-            // principle hand back the same underlying device context
-            // pointer across frames; with the cached-RCW variant the
-            // wrapper would be reused after our ReleaseComObject below,
-            // which races with the surface's own lifecycle on EndDraw.
-            // Unique-RCW costs an allocation per frame but eliminates
-            // that whole class of stale-wrapper hazards.
-            ctx = (ID2D1DeviceContext)Marshal.GetUniqueObjectForIUnknown(ctxPtr);
             SetIdentityWithTranslation(ctx, offset);
             ctx.Clear(Transparent);
             PaintPanel(ctx, content);
         }
         finally
         {
-            if (ctx is not null)
-            {
-                Marshal.ReleaseComObject(ctx);
-            }
-            surfaceInterop.EndDraw();
+            Marshal.ReleaseComObject(ctx);
+            Surface.EndDraw();
         }
     }
 
-    private static void SetIdentityWithTranslation(ID2D1DeviceContext ctx, WinGraphicsPointInt32 offset)
+    private static void SetIdentityWithTranslation(ID2D1DeviceContext ctx, System.Drawing.Point offset)
     {
         var transform = default(D2D_MATRIX_3X2_F);
         transform.Anonymous.Anonymous1.m11 = 1f;
@@ -602,9 +558,8 @@ internal sealed partial class HudRenderer : IDisposable
         Marshal.ReleaseComObject(_bodyFormat);
         Marshal.ReleaseComObject(_telemetryFormat);
         Marshal.ReleaseComObject(_dwriteFactory);
-        Surface.Dispose();
-        _graphicsDevice.Dispose();
+        Marshal.FinalReleaseComObject(Surface);
         Marshal.ReleaseComObject(_d2dDevice);
-        Marshal.ReleaseComObject(_d3dDevice);
+        // _d3dDevice is owned by WindowsApp (shared with OverlayWindow); not released here.
     }
 }

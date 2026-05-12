@@ -1,5 +1,4 @@
 using System.Collections.Immutable;
-using Linerule.Config;
 using Linerule.Core;
 using Linerule.Platform.Windows.Rendering;
 

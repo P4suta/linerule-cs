@@ -1,4 +1,3 @@
-using Linerule.Config;
 using Linerule.Core;
 
 namespace Linerule.Input;

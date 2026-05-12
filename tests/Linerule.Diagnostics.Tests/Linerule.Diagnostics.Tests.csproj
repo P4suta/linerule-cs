@@ -9,7 +9,6 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Linerule.Diagnostics\Linerule.Diagnostics.csproj" />
     <ProjectReference Include="..\..\src\Linerule.Core\Linerule.Core.csproj" />
-    <ProjectReference Include="..\..\src\Linerule.Config\Linerule.Config.csproj" />
     <ProjectReference Include="..\..\src\Linerule.Platform\Linerule.Platform.csproj" />
     <ProjectReference Include="..\..\src\Linerule.Bootstrap\Linerule.Bootstrap.csproj" />
   </ItemGroup>

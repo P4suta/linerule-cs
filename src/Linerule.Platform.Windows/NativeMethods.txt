@@ -1,11 +1,15 @@
 // CsWin32 input — symbols imported into Windows.Win32.*.
-// Keep aligned with docs/adr/0009-transparency-via-dcomp.md (no LWA_*).
+// Keep aligned with docs/adr/0009-transparency-via-dcomp.md (dcomp direct,
+// no LWA_*).
 //
 // Conventions per CsWin32 PInvoke004:
 //   - List the *enum type* (e.g. WINDOW_STYLE), not its individual constants
 //     (WS_POPUP). Constants are accessed via the typed enum at the call site.
 
-// Window lifecycle
+// Window lifecycle + Win32 message pump (manual — Phase 2 retired the
+// DispatcherQueue-driven loop in favor of GetMessage/Dispatch directly).
+// Note: CsWin32 substitutes POINT → System.Drawing.Point in signatures
+// automatically; IUnknown is implicit in the COM runtime.
 CreateWindowExW
 DestroyWindow
 RegisterClassExW
@@ -17,6 +21,11 @@ TranslateMessage
 DispatchMessageW
 PostQuitMessage
 PostMessageW
+WM_QUIT
+WM_APP
+WM_TIMER
+SetTimer
+KillTimer
 
 // Window styling for click-through + transparency
 GetWindowLongPtrW
@@ -111,7 +120,8 @@ DWRITE_PARAGRAPH_ALIGNMENT
 DWRITE_TEXT_METRICS
 
 // Direct3D11 + DXGI — ID3D11Device → IDXGIDevice → ID2D1Device chain
-// (BgraSupport flag required for D2D interop).
+// (BgraSupport flag required for D2D interop). The same ID3D11Device is
+// the rendering device passed to DCompositionCreateDevice2.
 D3D11CreateDevice
 ID3D11Device
 D3D11_CREATE_DEVICE_FLAG
@@ -119,14 +129,24 @@ D3D_DRIVER_TYPE
 D3D_FEATURE_LEVEL
 D3D11_SDK_VERSION
 IDXGIDevice
+DXGI_FORMAT
+DXGI_ALPHA_MODE
 
-// Windows.System.DispatcherQueueController — set up the system dispatcher
-// on the UI thread (load-bearing for `new Windows.UI.Composition.Compositor()`
-// per ADR-0009 v3). The C# WinRT projection of
-// `Windows.System.DispatcherQueueController.CreateOnCurrentThread` is
-// not exposed by Microsoft.Windows.SDK.NET, so we drop straight to
-// coremessaging.dll's `CreateDispatcherQueueController` via CsWin32.
-CreateDispatcherQueueController
-DispatcherQueueOptions
-DISPATCHERQUEUE_THREAD_TYPE
-DISPATCHERQUEUE_THREAD_APARTMENTTYPE
+// DirectComposition — Phase 2: WinAppSDK Compositor retired; we drop to
+// dcomp.dll directly so the AOT publish path is free of WinRT projection.
+// Device chain at boot:
+//   ID3D11Device → DCompositionCreateDevice2(IID_IDCompositionDesktopDevice,
+//   out device) → device.CreateTargetForHwnd(hwnd, topmost: false)
+//   → CreateVisual / CreateSurface → SetRoot / SetContent → Commit.
+// Vsync alignment via DwmFlush() on a dedicated tick thread (preferred over
+// WaitForCommitCompletion for AOT predictability — the latter requires
+// IDCompositionDevice2 inheritance metadata that CsWin32 doesn't always
+// surface for inherited methods).
+DCompositionCreateDevice2
+IDCompositionDevice2
+IDCompositionDesktopDevice
+IDCompositionTarget
+IDCompositionVisual2
+IDCompositionSurface
+IDCompositionEffectGroup
+DwmFlush

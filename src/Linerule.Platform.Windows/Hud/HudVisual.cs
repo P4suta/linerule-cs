@@ -1,27 +1,36 @@
 using System;
-using System.Numerics;
-using Linerule.Config;
+using System.Runtime.InteropServices;
+using Linerule.Core;
 using Linerule.Platform.Windows.Diagnostics;
-using Windows.UI.Composition;
+using Windows.Win32.Graphics.Direct3D11;
+using Windows.Win32.Graphics.DirectComposition;
 
 namespace Linerule.Platform.Windows.Hud;
 
 /// <summary>
 /// Composition wrapper for the HUD: owns the
-/// <see cref="SpriteVisual"/>, the <see cref="CompositionSurfaceBrush"/>
-/// that samples <see cref="HudRenderer.Surface"/>, and the
-/// <see cref="HudRenderer"/> itself. Public API is
-/// <see cref="Update"/>: call it with new <see cref="HudContent"/>;
-/// equality checks gate re-render so the steady-state cost is one
-/// equality compare. <see cref="SetOpacity"/> lets the tick loop fade the
-/// HUD as the reading-ruler highlight approaches it.
+/// <see cref="IDCompositionVisual2"/>, the
+/// <see cref="IDCompositionSurface"/> the HUD draws into (managed by the
+/// inner <see cref="HudRenderer"/>), an
+/// <see cref="IDCompositionEffectGroup"/> for opacity control, and the
+/// parent visual attachment. <see cref="Update"/> redraws iff content
+/// changed (gated by 33 ms throttle); <see cref="SetOpacity"/> drives
+/// the cursor-fade behavior.
+///
+/// <para>
+/// <b>Why an EffectGroup for opacity</b>: dcomp visuals do not have a
+/// direct <c>SetOpacity</c> property — that lives on
+/// <see cref="IDCompositionEffectGroup"/>. We attach one effect group
+/// per HUD visual via <c>visual.SetEffect(effectGroup)</c> and call
+/// <c>effectGroup.SetOpacity(value)</c> when the cursor-fade kernel
+/// produces a new value.
+/// </para>
 ///
 /// <para>
 /// <b>Z-order</b>: the supplied parent is the overlay's foreground
 /// container (<see cref="OverlayWindow.CreateLayer"/>), which sits above
-/// the background container where <c>CompositionRenderer</c> draws the
-/// focus-mode mask + stripes. The HUD therefore never gets dimmed by the
-/// mask, regardless of insertion order on the background side.
+/// the background container where <see cref="CompositionRenderer"/>
+/// draws the focus-mode mask + stripes.
 /// </para>
 /// </summary>
 internal sealed partial class HudVisual : IDisposable
@@ -29,32 +38,17 @@ internal sealed partial class HudVisual : IDisposable
     private readonly LoggerHandle _log;
 
     /// <summary>
-    /// Floor on the HUD redraw cadence. The D2D + DirectWrite path
-    /// behind <see cref="HudRenderer.Draw"/> opens a fresh
-    /// <c>ID2D1DeviceContext</c>, mints brushes, and creates per-call
-    /// <c>IDWriteTextLayout</c>s; doing this on every hotkey-driven
-    /// state change (≥ 80 Hz under long-press auto-repeat) showed up as
-    /// a hard process exit with no managed stack — likely a GPU
-    /// resource pressure cliff. 33 ms ≈ 30 Hz is well above the human
-    /// "I can read changing numbers" threshold and stays well within
-    /// the D2D resource budget.
+    /// Floor on the HUD redraw cadence — see history note in PR.
+    /// 33 ms ≈ 30 Hz is well above the human "I can read changing numbers"
+    /// threshold and stays well within the D2D resource budget.
     /// </summary>
     private const long MinDrawIntervalMs = 33;
 
-    private readonly ContainerVisual _parent;
+    private readonly IDCompositionVisual2 _parent;
     private readonly HudRenderer _renderer;
-    private readonly SpriteVisual _visual;
-    private readonly CompositionSurfaceBrush _brush;
-    private readonly HudLayout _layout;
+    private readonly IDCompositionVisual2 _visual;
+    private readonly IDCompositionEffectGroup _effect;
 
-    /// <summary>
-    /// Steady-state opacity multiplier applied to the entire HUD subtree.
-    /// The tick-loop's fade factor (0..1, computed from cursor distance) is
-    /// multiplied by this base, so a fully visible HUD lands at
-    /// <c>_baseOpacity</c> rather than 1.0. Sourced from
-    /// <see cref="HudConfig.BaseOpacity"/> — default 0.875 ≈ 87.5% opaque
-    /// (user request 2026-05-11).
-    /// </summary>
     private readonly float _baseOpacity;
 
     private HudContent? _last;
@@ -63,31 +57,38 @@ internal sealed partial class HudVisual : IDisposable
     private bool _disposed;
 
     /// <summary>HUD rectangle in HWND-pixel space.</summary>
-    public HudLayout Layout => _layout;
+    public HudLayout Layout { get; }
 
     public HudVisual(
-        Compositor compositor,
-        ContainerVisual parent,
+        IDCompositionDesktopDevice device,
+        ID3D11Device d3dDevice,
+        IDCompositionVisual2 parent,
         HudLayout layout,
         HudConfig hudCfg,
         LoggerHandle log
     )
     {
-        ArgumentNullException.ThrowIfNull(compositor);
+        ArgumentNullException.ThrowIfNull(device);
+        ArgumentNullException.ThrowIfNull(d3dDevice);
         ArgumentNullException.ThrowIfNull(parent);
         ArgumentNullException.ThrowIfNull(hudCfg);
         _log = log;
         _parent = parent;
-        _layout = layout;
+        Layout = layout;
         _baseOpacity = hudCfg.BaseOpacity;
-        _renderer = new HudRenderer(compositor, layout, hudCfg, log);
-        _brush = compositor.CreateSurfaceBrush(_renderer.Surface);
-        _visual = compositor.CreateSpriteVisual();
-        _visual.Brush = _brush;
-        _visual.Offset = new Vector3(layout.PositionPx.X, layout.PositionPx.Y, 0);
-        _visual.Size = layout.SizePx;
-        _visual.Opacity = _baseOpacity;
-        _parent.Children.InsertAtTop(_visual);
+        _renderer = new HudRenderer(device, d3dDevice, layout, hudCfg, log);
+
+        device.CreateVisual(out _visual);
+        _visual.SetContent(_renderer.Surface);
+        _visual.SetOffsetX(layout.PositionPx.X);
+        _visual.SetOffsetY(layout.PositionPx.Y);
+
+        device.CreateEffectGroup(out _effect);
+        _effect.SetOpacity(_baseOpacity);
+        _visual.SetEffect(_effect);
+
+        _parent.AddVisual(_visual, insertAbove: true, referenceVisual: null);
+
         _log.Info(
             "HUD visual attached",
             new LogField("offset_x", layout.PositionPx.X),
@@ -99,21 +100,9 @@ internal sealed partial class HudVisual : IDisposable
 
     /// <summary>
     /// Fade the entire HUD subtree. The supplied value is the cursor-driven
-    /// fade factor in [0, 1]; the actual <see cref="Visual.Opacity"/> written
-    /// is <c>fade × <see cref="BaseOpacity"/></c>, so a fully visible HUD
-    /// sits at the translucent base level rather than at 1.0. Idempotent
-    /// for unchanged values (saves a WinRT property write per tick on
-    /// steady-state distance). Values are clamped to [0, 1].
-    ///
-    /// <para>
-    /// When opacity falls below <see cref="CullThreshold"/> the visual is
-    /// also marked <c>IsVisible=false</c>, which tells DComp to skip the
-    /// HUD subtree entirely during the next compose pass — zero pixel
-    /// work, zero shader work. Above the threshold the visual is
-    /// re-enabled. This matches the user expectation that a fully
-    /// transparent HUD should not be silently consuming GPU budget
-    /// (2026-05-11 feedback).
-    /// </para>
+    /// fade factor in [0, 1]; the actual opacity written is
+    /// <c>fade × <see cref="HudConfig.BaseOpacity"/></c>, so a fully visible
+    /// HUD sits at the translucent base level rather than at 1.0.
     /// </summary>
     public void SetOpacity(float opacity)
     {
@@ -126,20 +115,10 @@ internal sealed partial class HudVisual : IDisposable
         {
             return;
         }
-        _visual.Opacity = clamped * _baseOpacity;
-        _visual.IsVisible = clamped > CullThreshold;
+        _effect.SetOpacity(clamped * _baseOpacity);
         _lastOpacity = clamped;
     }
 
-    private const float CullThreshold = 0.01f;
-
-    /// <summary>
-    /// Re-render iff <paramref name="content"/> differs from the last
-    /// rendered payload AND we are outside the 33 ms throttle window.
-    /// Skipped updates are dropped, not queued — the TickLoop's wall-clock
-    /// telemetry refresh (every 200 ms) guarantees eventual consistency
-    /// of the visible HUD with the actual state.
-    /// </summary>
     public void Update(in HudContent content)
     {
         if (_disposed)
@@ -169,25 +148,18 @@ internal sealed partial class HudVisual : IDisposable
         _disposed = true;
         try
         {
-            _parent.Children.Remove(_visual);
-        }
-        catch (ObjectDisposedException)
-        {
-            // Parent visual was already torn down — happens by design on
-            // clean shutdown because WindowsApp.ShutdownAsync disposes the
-            // overlay (which closes its Composition tree) before this `using`
-            // scope unwinds. Nothing to remove; not a warning.
+            _parent.RemoveVisual(_visual);
         }
         catch (Exception ex)
         {
             _log.Warn(
-                "HUD parent.Remove threw",
+                "HUD parent.RemoveVisual threw",
                 new LogField("ex", ex.GetType().Name),
                 new LogField("msg", ex.Message)
             );
         }
-        _visual.Dispose();
-        _brush.Dispose();
+        Marshal.FinalReleaseComObject(_effect);
+        Marshal.FinalReleaseComObject(_visual);
         _renderer.Dispose();
     }
 }

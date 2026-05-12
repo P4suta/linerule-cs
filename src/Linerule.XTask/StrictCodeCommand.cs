@@ -75,12 +75,11 @@ internal static class StrictCodeCommand
     }
 
     private static IReadOnlyList<Rule> BuildRules() =>
+        [.. CodeHygieneRules(), .. AotReflectionRules(), .. SqlSafetyRules()];
+
+    // Code hygiene — goto / pragma / SuppressMessage / bare trackers / Newtonsoft.
+    private static IEnumerable<Rule> CodeHygieneRules() =>
         [
-            new(
-                "ban-dynamic",
-                new Regex(@"\bdynamic\s+\w", BaseOptions, PatternTimeout),
-                "`dynamic` is AOT/trim-incompatible. Use generics or interfaces."
-            ),
             new(
                 "ban-goto",
                 new Regex(@"^\s*goto\s+\w", BaseOptions, PatternTimeout),
@@ -106,6 +105,18 @@ internal static class StrictCodeCommand
                 new Regex(@"\bNewtonsoft\.Json\b", BaseOptions, PatternTimeout),
                 "Use System.Text.Json source generators."
             ),
+        ];
+
+    // AOT / trim reflection vectors — ADR-0010 defensive lower bound. Roslyn
+    // analyzers (IL2xxx/IL3xxx) catch most of these; strict-code is the
+    // belt-and-braces grep that also fires on projects with IsAotCompatible=false.
+    private static IEnumerable<Rule> AotReflectionRules() =>
+        [
+            new(
+                "ban-dynamic",
+                new Regex(@"\bdynamic\s+\w", BaseOptions, PatternTimeout),
+                "`dynamic` is AOT/trim-incompatible. Use generics or interfaces."
+            ),
             new(
                 "ban-reflection-emit",
                 new Regex(@"\bSystem\.Reflection\.Emit\b", BaseOptions, PatternTimeout),
@@ -116,6 +127,41 @@ internal static class StrictCodeCommand
                 new Regex(@"\bActivator\.CreateInstance\s*\(\s*typeof", BaseOptions, PatternTimeout),
                 "Trim/AOT unsafe; use a typed factory."
             ),
+            new(
+                "ban-make-generic-type",
+                new Regex(@"\.MakeGenericType\b", BaseOptions, PatternTimeout),
+                "MakeGenericType is AOT-unsafe — use static generic dispatch (ADR-0010)."
+            ),
+            new(
+                "ban-make-generic-method",
+                new Regex(@"\.MakeGenericMethod\b", BaseOptions, PatternTimeout),
+                "MakeGenericMethod is AOT-unsafe — use static generic dispatch (ADR-0010)."
+            ),
+            new(
+                "ban-type-gettype-string",
+                new Regex(@"\bType\.GetType\s*\(\s*""", BaseOptions, PatternTimeout),
+                "Type.GetType(string) loses trim/AOT type info — use typeof(T) or a typed factory (ADR-0010)."
+            ),
+            new(
+                "ban-assembly-load",
+                new Regex(@"\bAssembly\.(?:Load|LoadFrom|LoadFile)\s*\(", BaseOptions, PatternTimeout),
+                "Dynamic assembly loading is AOT-incompatible — use static references (ADR-0010)."
+            ),
+            new(
+                "ban-reflection-member-lookup",
+                // Catches both `.GetType().GetProperty(...)` and `typeof(Foo).GetProperty(...)`
+                // chains for GetProperty/GetField/GetMethod.
+                new Regex(
+                    @"(?:\.GetType\(\)|typeof\([^)]+\))\s*\.\s*(?:GetProperty|GetField|GetMethod)\s*\(",
+                    BaseOptions,
+                    PatternTimeout
+                ),
+                "Runtime member lookup is AOT-unsafe — introduce a typed interface (ADR-0010)."
+            ),
+        ];
+
+    private static IEnumerable<Rule> SqlSafetyRules() =>
+        [
             new(
                 "ban-sql-interpolation",
                 new Regex("CommandText\\s*=\\s*\\$\"", BaseOptions, PatternTimeout),
@@ -147,7 +193,10 @@ internal static class StrictCodeCommand
             || normalized.Contains("/bin/", StringComparison.Ordinal)
             || normalized.Contains("/Generated/", StringComparison.Ordinal)
             || normalized.EndsWith(".g.cs", StringComparison.Ordinal)
-            || normalized.Contains("Linerule.XTask/StrictCodeCommand.cs", StringComparison.Ordinal);
+            || normalized.Contains("Linerule.XTask/StrictCodeCommand.cs", StringComparison.Ordinal)
+            // The rule-test fixtures necessarily quote the same patterns this
+            // file bans; exclude them so they don't self-trip.
+            || normalized.Contains("Linerule.XTask.Tests/StrictCodeRulesTests.cs", StringComparison.Ordinal);
     }
 
     private static string Truncate(string s, int max) => s.Length <= max ? s : s[..max] + "…";

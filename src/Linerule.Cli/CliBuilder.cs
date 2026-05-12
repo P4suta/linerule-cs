@@ -10,12 +10,11 @@ internal static class CliBuilder
     {
         var root = new RootCommand("linerule — reading-ruler overlay for Windows");
         root.Subcommands.Add(RunCommand.Build(ctx));
-        root.Subcommands.Add(ConfigCommand.Build());
         // Argless invocation = run. The run subcommand's description
         // ("Start the overlay (default).") promises this; this line keeps the
         // promise. The GUI launcher (Linerule.App) relies on the same default
-        // shape — both frontends collapse to RunCommand.Execute(null, ctx.Logger, ct).
-        root.SetAction((_, ct) => RunCommand.Execute(configPath: null, ctx, ct));
+        // shape — both frontends collapse to RunCommand.Execute(ctx, ct).
+        root.SetAction((_, ct) => RunCommand.Execute(ctx, ct));
         return root;
     }
 }

@@ -1,12 +1,11 @@
 using System;
-using Linerule.Config;
 using Linerule.Core;
 using Linerule.Input;
 using Linerule.Platform;
 using Linerule.Platform.Windows.Diagnostics;
 using Linerule.Platform.Windows.Win32;
-using Microsoft.UI.Dispatching;
 using Windows.Win32;
+using Windows.Win32.Foundation;
 
 namespace Linerule.Platform.Windows;
 
@@ -29,48 +28,51 @@ namespace Linerule.Platform.Windows;
 ///   <item>
 ///     <b>Effect dispatch</b> — the FSM returns <see cref="HoldEffect"/>s
 ///     (Emit / Schedule / Stop); this adapter applies them to
-///     <see cref="HotkeyHost.Enqueue"/> and the dispatcher-queue timer.
+///     <see cref="HotkeyHost.Enqueue"/> and the Win32 SetTimer/KillTimer pair.
 ///   </item>
 /// </list>
 ///
 /// <para>
-/// Threading: the poll timer runs on the UI thread via
-/// <see cref="DispatcherQueueTimer"/>; <c>GetAsyncKeyState</c> reads an
-/// OS-owned table and is safe from any thread.
+/// Threading: the poll timer is a Win32 <c>WM_TIMER</c> (set up via
+/// <c>SetTimer(hwnd, …)</c> on the overlay HWND), so the tick callback
+/// always lands on the UI thread that owns the message pump — same
+/// thread that mutates dcomp visuals, no marshaling required.
+/// <c>GetAsyncKeyState</c> reads an OS-owned table and is safe from any thread.
 /// </para>
 /// </summary>
 internal sealed partial class HotkeyRepeater : IDisposable
 {
+    private const nuint TimerId = 0x4C52_5052; // 'LRPR' — distinct from any other Win32 timer
     private readonly HotkeyHost _host;
-    private readonly DispatcherQueueTimer _timer;
+    private readonly HWND _hwnd;
     private readonly ISaturationOracle _oracle;
     private readonly RepeatConfig _config;
     private readonly LoggerHandle _log;
 
     private HoldState _state = HoldState.Idle.Instance;
+    private bool _timerActive;
     private bool _disposed;
 
-    public HotkeyRepeater(
-        DispatcherQueue queue,
+    public unsafe HotkeyRepeater(
+        IntPtr overlayHwnd,
         HotkeyHost host,
         ISaturationOracle oracle,
         RepeatConfig repeatCfg,
         LoggerHandle log
     )
     {
-        ArgumentNullException.ThrowIfNull(queue);
         ArgumentNullException.ThrowIfNull(host);
         ArgumentNullException.ThrowIfNull(oracle);
         ArgumentNullException.ThrowIfNull(repeatCfg);
 
         _host = host;
+        _hwnd = new HWND(overlayHwnd.ToPointer());
         _oracle = oracle;
         _config = repeatCfg;
         _log = log;
-        _timer = queue.CreateTimer();
-        _timer.Tick += OnTimerTick;
         _host.OnHotkeyFired = OnHotkeyFired;
-        _log.Debug("HotkeyRepeater initialized");
+        OverlayWndProcDispatch.OnWmTimer = OnTimerTick;
+        _log.Debug("HotkeyRepeater initialized (Win32 SetTimer driven)");
     }
 
     private void OnHotkeyFired(ChordSpec chord, OverlayAction action)
@@ -85,17 +87,17 @@ internal sealed partial class HotkeyRepeater : IDisposable
         ApplyEffects(effects);
     }
 
-    private void OnTimerTick(object? sender, object args)
+    private void OnTimerTick()
     {
         if (_disposed)
         {
-            _timer.Stop();
+            StopTimer();
             return;
         }
         var chord = ActiveChord(_state);
         if (chord is null)
         {
-            _timer.Stop();
+            StopTimer();
             return;
         }
         var input = new HoldInput.Tick(NowMs: Environment.TickCount64, StillHeld: IsChordHeld(chord), Oracle: _oracle);
@@ -114,11 +116,10 @@ internal sealed partial class HotkeyRepeater : IDisposable
                     _host.Enqueue(emit.Action);
                     break;
                 case HoldEffect.Schedule sched:
-                    _timer.Interval = sched.Next;
-                    _timer.Start();
+                    StartTimer(sched.Next);
                     break;
                 case HoldEffect.Halt:
-                    _timer.Stop();
+                    StopTimer();
                     break;
                 default:
                     // Exhaustive closed coproduct — any new variant becomes a
@@ -127,6 +128,24 @@ internal sealed partial class HotkeyRepeater : IDisposable
                     break;
             }
         }
+    }
+
+    private unsafe void StartTimer(TimeSpan interval)
+    {
+        var ms = (uint)Math.Max(1, (int)interval.TotalMilliseconds);
+        // SetTimer with the same id replaces the previous timer's interval.
+        _ = PInvoke.SetTimer(_hwnd, TimerId, ms, default);
+        _timerActive = true;
+    }
+
+    private void StopTimer()
+    {
+        if (!_timerActive)
+        {
+            return;
+        }
+        _ = PInvoke.KillTimer(_hwnd, TimerId);
+        _timerActive = false;
     }
 
     private static ChordSpec? ActiveChord(HoldState state) =>
@@ -166,8 +185,8 @@ internal sealed partial class HotkeyRepeater : IDisposable
             return;
         }
         _disposed = true;
-        _timer.Stop();
-        _timer.Tick -= OnTimerTick;
+        StopTimer();
+        OverlayWndProcDispatch.OnWmTimer = null;
         _host.OnHotkeyFired = null;
         _state = HoldState.Idle.Instance;
         _log.Debug("HotkeyRepeater disposed");

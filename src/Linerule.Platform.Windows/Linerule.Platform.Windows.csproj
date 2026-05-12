@@ -18,19 +18,33 @@
     <ShouldComputeInputPris>false</ShouldComputeInputPris>
     <!-- GetWindowLongPtrW requires explicit CPU target. -->
     <PlatformTarget>x64</PlatformTarget>
-    <!-- CsWin32 COM marshaling (IL2050/SYSLIB1096) blocks AOT; see ADR-0010. -->
-    <IsAotCompatible>false</IsAotCompatible>
+    <!-- ADR-0010 Phase 2: WinAppSDK / CsWinRT projection is gone (replaced
+         by dcomp-direct via CsWin32). The remaining CsWin32 / D3D11 / D2D
+         COM marshaling is correctness-warning material (IL2050/IL2057),
+         silenced below; the project is now AOT-publishable. -->
+    <IsAotCompatible>true</IsAotCompatible>
+    <!-- ADR-0010: trim/AOT/single-file analyzers still run here (enabled in
+         Directory.Build.props independently of IsAotCompatible) so that NEW
+         reflection is caught even in projects that are AOT-incompatible by
+         design. We silence only:
+           * IL2050 — COM marshalling on P/Invokes. The 3 hand-written sites
+             (HudRenderer factory methods) carry per-method
+             [UnconditionalSuppressMessage]; this NoWarn covers the dozens of
+             CsWin32 generator-output sites in obj/.../*.g.cs which we cannot
+             annotate at the call site.
+           * IL2057 — Type.GetType(string) inside CsWin32's WinRTCustomMarshaler.g.cs.
+             The strict-code regex `ban-type-gettype-string` + BannedSymbols.txt
+             continue to enforce this on hand-written code workspace-wide. -->
+    <NoWarn>$(NoWarn);IL2050;IL2057</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\Linerule.Core\Linerule.Core.csproj" />
-    <ProjectReference Include="..\Linerule.Config\Linerule.Config.csproj" />
     <ProjectReference Include="..\Linerule.Platform\Linerule.Platform.csproj" />
     <ProjectReference Include="..\Linerule.Input\Linerule.Input.csproj" />
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.WindowsAppSDK" />
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools" />
     <PackageReference Include="Microsoft.Windows.CsWin32">
       <PrivateAssets>all</PrivateAssets>

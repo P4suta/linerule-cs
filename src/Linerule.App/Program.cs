@@ -7,6 +7,7 @@ using BootDag = Linerule.Diagnostics.Storage.BootDag;
 // WinExe entry. Boot DAG drives every startup step; if it fails we still
 // produce a SQLite-logged crash trace (ADR-0012) — the WinExe has no
 // console attached so a Spectre render would land nowhere visible.
+// ADR-0015: tunables are compile-time constants — no config file loaded.
 var boot = await BootDag.Default().Run(BootArgs.FromArgv(args), default).ConfigureAwait(false);
 if (boot is Result<AppContext, BootstrapError>.Err)
 {

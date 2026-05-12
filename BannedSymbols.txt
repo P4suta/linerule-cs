@@ -14,6 +14,31 @@ T:System.Reflection.Emit.AssemblyBuilder; AOT-incompatible; designs that need co
 T:System.Reflection.Emit.MethodBuilder; AOT-incompatible.
 M:System.Activator.CreateInstance(System.Type); Trim/AOT unsafe; instantiate via typed factory or generic constraint.
 
+; Generic instantiation at runtime.
+M:System.Type.MakeGenericType(System.Type[]); AOT-unsafe — use static generic dispatch (ADR-0010).
+M:System.Reflection.MethodInfo.MakeGenericMethod(System.Type[]); AOT-unsafe — use static generic dispatch (ADR-0010).
+
+; Dynamic assembly loading — all overloads.
+M:System.Reflection.Assembly.Load(System.String); Dynamic assembly loading is AOT-incompatible (ADR-0010).
+M:System.Reflection.Assembly.Load(System.Byte[]); AOT-incompatible (ADR-0010).
+M:System.Reflection.Assembly.Load(System.Byte[],System.Byte[]); AOT-incompatible (ADR-0010).
+M:System.Reflection.Assembly.Load(System.Reflection.AssemblyName); AOT-incompatible (ADR-0010).
+M:System.Reflection.Assembly.LoadFrom(System.String); AOT-incompatible (ADR-0010).
+M:System.Reflection.Assembly.LoadFile(System.String); AOT-incompatible (ADR-0010).
+
+; Runtime string-keyed member lookup — companion to the strict-code regex
+; `ban-reflection-member-lookup`. After the ADR-0010 IPathfulSink fix, the
+; hand-written count is zero. Property/Field overloads are listed below;
+; GetType(string) and GetMethod(string) are deliberately NOT banned here
+; because CsWin32 emits them in *.g.cs (WinRTCustomMarshaler). Those two
+; are covered by:
+;   - strict-code regex `ban-type-gettype-string` (hand-written *.cs only,
+;     generator outputs are excluded), AND
+;   - IL2057 analyzer (silenced only in Linerule.Platform.Windows where
+;     CsWin32 lives — everywhere else it's an error).
+M:System.Type.GetProperty(System.String); String-keyed property lookup is AOT-unsafe — use a typed interface (ADR-0010).
+M:System.Type.GetField(System.String); AOT-unsafe (ADR-0010).
+
 ; ── Time/locale traps in tests ──
 P:System.DateTime.Now; Use TimeProvider so tests are deterministic.
 P:System.DateTime.UtcNow; Use TimeProvider so tests are deterministic.

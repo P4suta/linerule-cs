@@ -1,7 +1,6 @@
 using System;
-using System.Collections.Immutable;
 using System.Threading.Tasks;
-using Linerule.Config;
+using Linerule.Core;
 using Linerule.Platform.Windows.Diagnostics;
 
 namespace Linerule.Diagnostics.Storage;
@@ -10,8 +9,7 @@ namespace Linerule.Diagnostics.Storage;
 /// Final output of <see cref="BootDag.Default"/>: every capability the
 /// running overlay needs, bundled with deterministic LIFO teardown via
 /// <see cref="DisposeAsync"/>. Holds the logger root, sink, crash guard
-/// registration, the resolved <see cref="UserConfig"/>, and any diagnostics
-/// the config loader emitted as warnings (non-fatal).
+/// registration, and the constant <see cref="UserConfig"/> (ADR-0015).
 /// </summary>
 public sealed class AppContext : IAsyncDisposable
 {
@@ -21,21 +19,13 @@ public sealed class AppContext : IAsyncDisposable
     public LoggerRoot Logger { get; }
     public SqliteEventSink Sink { get; }
     public UserConfig Config { get; }
-    public ImmutableArray<ConfigDiagnostic> Warnings { get; }
 
-    internal AppContext(
-        LoggerRoot logger,
-        SqliteEventSink sink,
-        IDisposable? crashGuard,
-        UserConfig config,
-        ImmutableArray<ConfigDiagnostic> warnings
-    )
+    internal AppContext(LoggerRoot logger, SqliteEventSink sink, IDisposable? crashGuard, UserConfig config)
     {
         Logger = logger;
         Sink = sink;
         _crashGuard = crashGuard;
         Config = config;
-        Warnings = warnings;
     }
 
     public async ValueTask DisposeAsync()

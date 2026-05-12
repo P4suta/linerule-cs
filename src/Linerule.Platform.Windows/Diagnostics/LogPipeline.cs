@@ -27,12 +27,11 @@ public sealed partial class LogPipeline(
     private readonly ImmutableArray<ILogSink> _sinks = sinks;
     private readonly Dictionary<string, LogLevel> _perSubsystem = new(perSubsystem, StringComparer.Ordinal);
     private readonly LogLevel _defaultLevel = defaultLevel;
-    private readonly Guid _runId = runId;
     private readonly AsyncLocal<LogContext?> _context = new();
 
-    public Guid RunId => _runId;
+    public Guid RunId { get; } = runId;
 
-    public LogContext CurrentContext => _context.Value ?? new LogContext(_runId);
+    public LogContext CurrentContext => _context.Value ?? new LogContext(RunId);
 
     public IDisposable PushContext(Func<LogContext, LogContext> mutator)
     {

@@ -1,5 +1,3 @@
-using Linerule.Config;
-
 namespace Linerule.Diagnostics;
 
 /// <summary>
