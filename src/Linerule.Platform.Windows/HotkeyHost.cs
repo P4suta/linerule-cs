@@ -27,6 +27,7 @@ public sealed class HotkeyHost : IHotkeyHost
     private const string ClassName = "linerule-cs-hotkey-host";
 
     private static WNDPROC? _wndProcKeepAlive;
+
     // ConcurrentDictionary, not Dictionary: Create/Dispose may run on the
     // bootstrap async path while HotkeyWndProc dispatches on the Win32 UI
     // thread (the message-only window's pump). Even though the overlay is
