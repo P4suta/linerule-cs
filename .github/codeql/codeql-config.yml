@@ -1,40 +1,44 @@
 name: linerule-cs CodeQL config
 
+# `security-extended`, not `security-and-quality`. The quality layer fires
+# heavily on a codebase like this where the architecture (dcomp-direct +
+# CsWin32-generated COM interop + crash-resilient pacer threads) is at odds
+# with CodeQL's quality heuristics. Concretely, the suite-swap drops:
+#
+#   * cs/call-to-unmanaged-code (52), cs/unmanaged-code (41) — P/Invoke is
+#     the deliberate boundary, not a smell. Linerule.Platform.Windows is
+#     literally an unmanaged-interop layer.
+#   * cs/catch-of-all-exceptions (14) — every site is an intentional
+#     crash-isolation seam (render pacer, log pipeline, crash-dump writer,
+#     top-level WindowsApp.RunAsync). Catching Exception keeps the overlay
+#     alive across frame failures by design.
+#   * cs/constant-condition (24), cs/useless-cast-to-self (36),
+#     cs/simplifiable-boolean-expression (29), cs/useless-type-test (14),
+#     cs/missed-ternary-operator (10), cs/missed-readonly-modifier (6),
+#     cs/useless-gethashcode-call (4), cs/useless-assignment-to-local (4),
+#     cs/too-many-ref-parameters (3), cs/linq/missed-select (3),
+#     cs/useless-upcast (3), cs/type-test-of-this (2), and a handful of
+#     others — all fire ~exclusively on CsWin32-generator output under
+#     obj/, which `paths-ignore` cannot reach (generated source is folded
+#     into the analyzed assembly representation; documented Code Scanning
+#     behavior).
+#   * cs/path-combine (13) — overly conservative; flagged on every
+#     `Path.Combine` call regardless of whether any argument can be
+#     absolute. The codebase's call sites all compose relative segments.
+#
+# Quality findings on hand-written code are still enforced — via Roslyn:
+# `.editorconfig` promotes IDE0010 / IDE0046 / IDE0058 / IDE0059 /
+# IDE0072 / CA1063 / CA1801 / CA1851 / CA2007 / CA2016 / CA2208 to error,
+# the analyzers run on every `dotnet build`, and `strict-code (xtask)`
+# runs additional regex-based audits in CI. The trade-off is that CodeQL
+# focuses on security here and Roslyn covers quality; this matches how
+# both tools were designed to be used (CodeQL is taint-flow strong,
+# Roslyn analyzers are syntax-pattern strong).
 queries:
-  - uses: security-and-quality
+  - uses: security-extended
 
 paths-ignore:
   - '**/bin/**'
   - '**/obj/**'
   - '**/Generated/**'
   - 'artifacts/**'
-
-# `paths-ignore` does not exclude source-generator output that gets compiled
-# INTO the analyzed assembly (documented GitHub Code Scanning behavior — the
-# filter applies to the on-disk source paths CodeQL walks, but generated
-# `.g.cs` under obj/ is folded into the assembly representation and re-
-# surfaces through quality queries). For CsWin32, that means hundreds of
-# `note`-severity quality alerts on generated COM/HRESULT/marshalling
-# scaffolding — code we cannot edit at the source. Rather than drop the
-# whole `security-and-quality` suite (which still has security-relevant
-# value on hand-written code), exclude only the specific rule IDs that
-# fire exclusively on generator output. Roslyn IDE0010/IDE0046/IDE0058
-# + CA2218 + CA1851 (severity=error in .editorconfig) cover equivalent
-# ground on hand-written code; the trade-off is documented and visible.
-query-filters:
-  - exclude:
-      id: cs/useless-cast-to-self
-  - exclude:
-      id: cs/simplifiable-boolean-expression
-  - exclude:
-      id: cs/useless-type-test
-  - exclude:
-      id: cs/missed-ternary-operator
-  - exclude:
-      id: cs/useless-gethashcode-call
-  - exclude:
-      id: cs/linq/missed-select
-  - exclude:
-      id: cs/useless-upcast
-  - exclude:
-      id: cs/useless-tostring-call
