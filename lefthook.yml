@@ -1,25 +1,25 @@
 # lefthook — git hooks runner.
-# Install once with: `lefthook install` (memory: 2026-wave dev tooling).
 #
-# Pre-commit policy: anything a tool can fix mechanically (formatting,
-# canonical spelling) is fixed in-place and re-staged. Only checks that
-# need human judgment (strict-code violations, malformed workflow YAML,
-# bad commit-msg headers) fail the commit. This keeps the hook a help,
-# not a hurdle.
-
-# Tools assumed on PATH (mise-managed in the user's WSL env):
-#   csharpier (via `dotnet tool restore` + `dotnet csharpier`)
-#   typos
-#   actionlint
-#   npx (for commitlint)
-#   dotnet
+# One-time install: `just hooks` (writes .git/hooks/<event> scripts and
+# pulls down commitlint's node deps inside the dev container). The hook
+# commands below delegate to Justfile `_hook-*` recipes so every step
+# routes through the same `docker compose run --rm dev` / `exec dev`
+# logic as `just lint` / `just test` — no tool is ever assumed to exist
+# on the WSL host (CLAUDE.md "Docker only").
+#
+# Pre-commit policy: fixers run first (csharpier / dotnet format / typos)
+# and re-stage their writes; checks (actionlint, xtask-strict) follow.
+# Pre-push runs the full `just lint` suite + `just test-release` + `just
+# publish` so a green push always lands a publish artifact in sync with
+# HEAD. To bypass the heavy publish step (e.g. for docs-only pushes), use
+# `LEFTHOOK_EXCLUDE=publish git push`.
 
 assert_lefthook_installed: true
 no_tty: false
 colors: true
 
 pre-commit:
-  # Serial so fixers cannot race each other on the same file. Each step
+  # Serial so fixers cannot race each other on the same file. Each fixer
   # restages its writes; the next step sees the canonical form.
   parallel: false
   follow: true
@@ -27,56 +27,59 @@ pre-commit:
     csharpier-format:
       tags: format
       glob: "*.cs"
-      run: dotnet csharpier format {staged_files}
+      run: just _hook-csharpier-format {staged_files}
       stage_fixed: true
 
     dotnet-format-style:
       tags: lint
       glob: "*.cs"
-      run: dotnet format style --include {staged_files} --no-restore
+      run: just _hook-dotnet-format-style {staged_files}
       stage_fixed: true
 
     dotnet-format-analyzers:
       tags: lint
       glob: "*.cs"
-      run: dotnet format analyzers --include {staged_files} --no-restore
+      run: just _hook-dotnet-format-analyzers {staged_files}
       stage_fixed: true
 
     typos-fix:
       tags: spell
-      run: typos --write-changes {staged_files}
+      run: just _hook-typos-fix {staged_files}
       stage_fixed: true
 
-    # Below this line: checks only — these report violations the author has
-    # to address, because no mechanical fix is safe.
+    # Below this line: checks only — these report violations the author
+    # has to address, because no mechanical fix is safe.
     actionlint:
       tags: ci
       glob: "{.github/workflows/*.yml,.github/workflows/*.yaml}"
-      run: actionlint -color {staged_files}
+      run: just _hook-actionlint {staged_files}
 
     xtask-strict:
       tags: lint
       glob: "*.cs"
-      run: dotnet run --project src/Linerule.XTask -- strict-code
+      run: just _hook-xtask-strict
 
 commit-msg:
   commands:
     commitlint:
-      run: npx --no -- commitlint --edit {1}
+      run: just _hook-commitlint {1}
 
 pre-push:
-  # piped = run in declaration order, stop on first failure. Publish is
-  # gated behind a green test run so `artifacts/publish/linerule.exe` is
-  # never refreshed from a broken tree.
+  # piped = run in declaration order, stop on first failure. Lint catches
+  # the cheap CI-roundtrip mistakes (csharpier drift, format-style drift,
+  # typos, actionlint, strict-code). Test runs cross-platform unit suite.
+  # Publish keeps `artifacts/publish/linerule.exe` synchronized with HEAD
+  # so iterating against a stale binary is impossible.
   piped: true
   commands:
+    lint:
+      tags: lint
+      run: just lint
+
     test:
-      run: dotnet test --nologo --no-restore
+      tags: test
+      run: just test-release
 
     publish:
-      # Mirrors `just publish` (Justfile) — self-contained Release build
-      # for win-x64 dropped at `artifacts/publish/`. Runs only after tests
-      # pass, so a clean `git push` always leaves the publish artifact in
-      # sync with HEAD (avoids the "ran stale exe and chased a phantom
-      # bug" failure mode).
-      run: dotnet publish src/Linerule.Cli -c Release -r win-x64 /p:SelfContained=true -o artifacts/publish --nologo -v minimal
+      tags: publish heavy
+      run: just publish
