@@ -143,9 +143,41 @@ lint: format-cs-check format-check typos actionlint xtask-strict
 
 # ----- hooks -----
 
-# Install lefthook git hooks. Run from the host; the binary is in the container.
+# One-time setup after clone. Installs commitlint's node deps inside the
+# container (npm is unavailable on the WSL host by design — Docker-only),
+# then writes the .git/hooks/<event> scripts. After this, every commit and
+# push runs the lefthook pipeline below.
 hooks:
+    {{docker_run}} npm install --no-audit --no-fund
     {{lefthook_bin}} install
+
+# Lefthook command targets. lefthook.yml shells out to these so the hook
+# steps reuse the same docker_run / dotnet / typos_bin variables as the
+# rest of this Justfile — i.e., hooks behave identically whether `dev` is
+# warm (exec) or cold (run --rm), and never assume a tool exists on the
+# WSL host. Underscore prefix keeps them out of `just --list`.
+
+_hook-csharpier-format *files:
+    {{dotnet}} tool restore
+    {{dotnet}} csharpier format {{files}}
+
+_hook-dotnet-format-style *files:
+    {{dotnet}} format style --include {{files}} --no-restore
+
+_hook-dotnet-format-analyzers *files:
+    {{dotnet}} format analyzers --include {{files}} --no-restore
+
+_hook-typos-fix *files:
+    {{typos_bin}} --write-changes {{files}}
+
+_hook-actionlint *files:
+    {{actionlint_bin}} -color {{files}}
+
+_hook-xtask-strict:
+    {{dotnet}} run --project src/Linerule.XTask -- strict-code
+
+_hook-commitlint msgfile:
+    {{docker_run}} npx --no -- commitlint --edit {{msgfile}}
 
 # ----- release / publish -----
 
