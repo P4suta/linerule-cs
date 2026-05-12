@@ -8,3 +8,33 @@ paths-ignore:
   - '**/obj/**'
   - '**/Generated/**'
   - 'artifacts/**'
+
+# `paths-ignore` does not exclude source-generator output that gets compiled
+# INTO the analyzed assembly (documented GitHub Code Scanning behavior — the
+# filter applies to the on-disk source paths CodeQL walks, but generated
+# `.g.cs` under obj/ is folded into the assembly representation and re-
+# surfaces through quality queries). For CsWin32, that means hundreds of
+# `note`-severity quality alerts on generated COM/HRESULT/marshalling
+# scaffolding — code we cannot edit at the source. Rather than drop the
+# whole `security-and-quality` suite (which still has security-relevant
+# value on hand-written code), exclude only the specific rule IDs that
+# fire exclusively on generator output. Roslyn IDE0010/IDE0046/IDE0058
+# + CA2218 + CA1851 (severity=error in .editorconfig) cover equivalent
+# ground on hand-written code; the trade-off is documented and visible.
+query-filters:
+  - exclude:
+      id: cs/useless-cast-to-self
+  - exclude:
+      id: cs/simplifiable-boolean-expression
+  - exclude:
+      id: cs/useless-type-test
+  - exclude:
+      id: cs/missed-ternary-operator
+  - exclude:
+      id: cs/useless-gethashcode-call
+  - exclude:
+      id: cs/linq/missed-select
+  - exclude:
+      id: cs/useless-upcast
+  - exclude:
+      id: cs/useless-tostring-call
