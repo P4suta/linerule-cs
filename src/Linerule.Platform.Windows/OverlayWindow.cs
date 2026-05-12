@@ -7,21 +7,21 @@ using Linerule.Core;
 using Linerule.Platform;
 using Linerule.Platform.Windows.Diagnostics;
 using Linerule.Platform.Windows.Win32;
-using Microsoft.UI.Dispatching;
-using Windows.UI.Composition;
-using Windows.UI.Composition.Desktop;
 using Windows.Win32;
 using Windows.Win32.Foundation;
+using Windows.Win32.Graphics.Direct3D11;
+using Windows.Win32.Graphics.DirectComposition;
+using Windows.Win32.Graphics.Dxgi.Common;
 using Windows.Win32.UI.WindowsAndMessaging;
 
 namespace Linerule.Platform.Windows;
 
 /// <summary>
-/// Top-most, click-through, true-per-pixel-alpha overlay built on the
-/// canonical PowerToys MouseHighlighter pattern:
-/// <see cref="Windows.UI.Composition.Compositor"/> +
-/// <see cref="ICompositorDesktopInterop"/> +
-/// <see cref="DesktopWindowTarget"/>.
+/// Top-most, click-through, true-per-pixel-alpha overlay built on
+/// <b>DirectComposition direct</b> — <c>dcomp.dll</c>'s
+/// <see cref="IDCompositionDesktopDevice"/> and friends — instead of
+/// WinAppSDK's <c>Windows.UI.Composition.Compositor</c>. ADR-0010 Phase 2
+/// retired the WinRT projection layer so the overlay can <c>&lt;PublishAot&gt;</c>.
 ///
 /// <para>
 /// <b>HWND ex-style</b>: <c>WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_NOREDIRECTIONBITMAP | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW | WS_EX_TOPMOST</c>.
@@ -31,19 +31,18 @@ namespace Linerule.Platform.Windows;
 /// directly to its own GPU surface (no GDI redirection bitmap, full
 /// per-pixel alpha). <c>SetLayeredWindowAttributes</c> and
 /// <c>UpdateLayeredWindow</c> are deliberately NOT used — those are the
-/// legacy GDI pathways (LWA_COLORKEY / LWA_ALPHA); Composition owns the
+/// legacy GDI pathways (LWA_COLORKEY / LWA_ALPHA); DComposition owns the
 /// surface and DWM composites it.
 /// </para>
 ///
 /// <para>
-/// <b>Composition attachment</b>: we QI <see cref="ICompositorDesktopInterop"/>
-/// off a fresh <c>Windows.UI.Composition.Compositor</c> and call
-/// <c>CreateDesktopWindowTarget(hwnd, isTopmost: false, …)</c>. NO
-/// <c>ContentIsland</c>, NO <c>DesktopAttachedSiteBridge</c>: that path
-/// belongs to Microsoft.UI.Composition + WinUI 3 island hosting and
-/// wedges natively on <c>WS_EX_LAYERED</c> HWNDs in WinAppSDK 2.0
-/// (verified 2026-05-11). See ADR-0009 v3 for the empirical trail and
-/// the canonical PowerToys reference.
+/// <b>Composition attachment</b>: <c>DCompositionCreateDevice2(d3d, iid, out)</c>
+/// mints the desktop device.
+/// <c>device.CreateTargetForHwnd(hwnd, isTopmost: false, out target)</c>
+/// binds it to the overlay HWND. The root visual is then attached via
+/// <c>target.SetRoot(root)</c>. No <c>ContainerVisual</c> /
+/// <c>DesktopWindowTarget</c> WinRT types are touched. See ADR-0009 (dcomp-
+/// direct amendment).
 /// </para>
 /// </summary>
 public sealed class OverlayWindow : IOverlaySurface
@@ -62,35 +61,31 @@ public sealed class OverlayWindow : IOverlaySurface
 
     private readonly LoggerHandle _log;
     private readonly HWND _hwnd;
-    private readonly DesktopWindowTarget _target;
-    private readonly ContainerVisual _root;
-    private readonly ContainerVisual _backgroundLayer;
-    private readonly ContainerVisual _foregroundLayer;
+    private readonly IDCompositionTarget _target;
+    private readonly IDCompositionVisual2 _root;
+    private readonly IDCompositionVisual2 _backgroundLayer;
+    private readonly IDCompositionVisual2 _foregroundLayer;
     private readonly CompositionRenderer _renderer;
     private bool _disposed;
 
     public ScreenRect<Logical> MonitorBounds { get; }
 
-    /// <summary>
-    /// The Composition device the overlay renders into — exposed so
-    /// auxiliary visuals (HUD, future telemetry layers, etc.) can build
-    /// their own surfaces against the same compositor.
-    /// </summary>
-    public Compositor Compositor { get; }
+    /// <summary>The dcomp device hosting the overlay's visual tree.</summary>
+    internal IDCompositionDesktopDevice Device { get; }
 
     /// <summary>
-    /// Create a new top-level Composition layer inside the overlay's
-    /// foreground container. Foreground sits above the background container
-    /// (where <see cref="CompositionRenderer"/> paints the mask + stripes),
-    /// so layers handed out here are never dimmed by the focus-mode mask
-    /// even when the mask covers the entire HWND. Each subsystem that wants
-    /// its own layer (HUD, tooltips, etc.) calls this once and adds its
-    /// visuals to the returned container.
+    /// Create a new top-level visual inside the overlay's foreground
+    /// container. Foreground sits above the background container (where
+    /// <see cref="CompositionRenderer"/> paints the mask + stripes), so
+    /// layers handed out here are never dimmed by the focus-mode mask
+    /// even when the mask covers the entire HWND. Each subsystem that
+    /// wants its own layer (HUD, tooltips, etc.) calls this once and
+    /// adds its visuals to the returned container.
     /// </summary>
-    public ContainerVisual CreateLayer()
+    internal IDCompositionVisual2 CreateLayer()
     {
-        var layer = Compositor.CreateContainerVisual();
-        _foregroundLayer.Children.InsertAtTop(layer);
+        Device.CreateVisual(out var layer);
+        _foregroundLayer.AddVisual(layer, insertAbove: true, referenceVisual: null);
         return layer;
     }
 
@@ -99,38 +94,30 @@ public sealed class OverlayWindow : IOverlaySurface
 
     private OverlayWindow(
         HWND hwnd,
-        Compositor compositor,
-        DesktopWindowTarget target,
-        ContainerVisual root,
+        IDCompositionDesktopDevice device,
+        IDCompositionTarget target,
+        IDCompositionVisual2 root,
+        IDCompositionVisual2 backgroundLayer,
+        IDCompositionVisual2 foregroundLayer,
+        CompositionRenderer renderer,
         ScreenRect<Logical> monitor,
         LoggerHandle log
     )
     {
         _hwnd = hwnd;
         _log = log;
-        Compositor = compositor;
+        Device = device;
         _target = target;
         _root = root;
-
-        // Two z-stacked containers under the root: background hosts the
-        // mask + stripe SpriteVisuals minted by CompositionRenderer (so
-        // they're below everything else); foreground hosts HUD + future
-        // overlays (so they never get dimmed by the mask in focus mode).
-        // Both fill the root via RelativeSizeAdjustment.
-        _backgroundLayer = compositor.CreateContainerVisual();
-        _backgroundLayer.RelativeSizeAdjustment = new System.Numerics.Vector2(1f, 1f);
-        _foregroundLayer = compositor.CreateContainerVisual();
-        _foregroundLayer.RelativeSizeAdjustment = new System.Numerics.Vector2(1f, 1f);
-        _root.Children.InsertAtTop(_backgroundLayer);
-        _root.Children.InsertAtTop(_foregroundLayer); // foreground sits above background.
-
-        _renderer = new CompositionRenderer(compositor, _backgroundLayer);
+        _backgroundLayer = backgroundLayer;
+        _foregroundLayer = foregroundLayer;
+        _renderer = renderer;
         MonitorBounds = monitor;
     }
 
-    public static OverlayWindow Create(ScreenRect<Logical> monitor, DispatcherQueue queue, LoggerRoot logger)
+    internal static OverlayWindow Create(ScreenRect<Logical> monitor, ID3D11Device d3dDevice, LoggerRoot logger)
     {
-        ArgumentNullException.ThrowIfNull(queue);
+        ArgumentNullException.ThrowIfNull(d3dDevice);
         ArgumentNullException.ThrowIfNull(logger);
 
         var log = logger.For(Subsystems.OverlayWindow);
@@ -150,8 +137,8 @@ public sealed class OverlayWindow : IOverlaySurface
         log.Info("CreateWindowExW ok", new LogField("hwnd", HexHwnd(hwnd)));
         ExStyleSnapshot.Capture(hwnd, "after CreateWindowExW", log);
 
-        var (compositor, target, root) = AttachDesktopWindowTarget(hwnd, compLog);
-        ExStyleSnapshot.Capture(hwnd, "after CreateDesktopWindowTarget", log);
+        var (device, target, root, backgroundLayer, foregroundLayer, renderer) = AttachDcomp(hwnd, d3dDevice, compLog);
+        ExStyleSnapshot.Capture(hwnd, "after dcomp attach", log);
 
         // ShowWindow's BOOL return is the previous show state, not a success
         // flag — go through CheckLastError so we only warn on a real fault.
@@ -160,33 +147,21 @@ public sealed class OverlayWindow : IOverlaySurface
         log.Info("ShowWindow ok — overlay live");
         ExStyleSnapshot.Capture(hwnd, "after ShowWindow", log);
 
-        return new OverlayWindow(hwnd, compositor, target, root, monitor, log);
+        return new OverlayWindow(hwnd, device, target, root, backgroundLayer, foregroundLayer, renderer, monitor, log);
     }
 
     private static unsafe HWND CreateHwnd(ScreenRect<Logical> monitor, LoggerHandle log)
     {
-        // Click-through + per-pixel alpha pairing (ADR-0009 v3, PowerToys
-        // MouseHighlighter pattern):
+        // ADR-0009 click-through + per-pixel alpha pairing — the ex-style
+        // mix is unchanged from the Compositor-based v3; only the composition
+        // pipeline below it dropped from WinRT to dcomp-direct.
         //
-        //   WS_EX_LAYERED            — DWM is in the windowing path; routes
-        //                              WM_NCHITTEST + clicks through to the
-        //                              window beneath when paired with
-        //                              WS_EX_TRANSPARENT. NO LWA_* call —
-        //                              Composition writes the surface; the
-        //                              legacy SetLayeredWindowAttributes
-        //                              GDI pathway is deliberately unused.
-        //   WS_EX_TRANSPARENT        — cross-process click-through hint.
-        //   WS_EX_NOREDIRECTIONBITMAP — DComp draws directly to its own GPU
-        //                              surface; DWM composites with per-pixel
-        //                              alpha. No GDI redirection bitmap.
-        //                              LAYERED and NOREDIRECTIONBITMAP are
-        //                              NOT mutually exclusive — they ship
-        //                              together in PowerToys; LAYERED owns
-        //                              click routing, NOREDIRECTIONBITMAP
-        //                              owns the rendering path.
-        //   WS_EX_NOACTIVATE         — overlay never grabs focus on click anomalies.
-        //   WS_EX_TOOLWINDOW         — no taskbar entry / Alt-Tab presence.
-        //   WS_EX_TOPMOST            — stays above normal windows.
+        //   WS_EX_LAYERED + WS_EX_TRANSPARENT: DWM-level click routing.
+        //   WS_EX_NOREDIRECTIONBITMAP: dcomp owns the GPU surface, no GDI
+        //                              redirection bitmap.
+        //   WS_EX_NOACTIVATE: never grabs focus on click anomalies.
+        //   WS_EX_TOOLWINDOW: no taskbar entry / Alt-Tab presence.
+        //   WS_EX_TOPMOST: stays above normal windows.
         const WINDOW_EX_STYLE ex =
             WINDOW_EX_STYLE.WS_EX_LAYERED
             | WINDOW_EX_STYLE.WS_EX_TRANSPARENT
@@ -222,46 +197,59 @@ public sealed class OverlayWindow : IOverlaySurface
         }
     }
 
-    private static unsafe (
-        Compositor Compositor,
-        DesktopWindowTarget Target,
-        ContainerVisual Root
-    ) AttachDesktopWindowTarget(HWND hwnd, LoggerHandle compLog)
+    [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage(
+        "Trimming",
+        "IL2050:Correctness of COM interop cannot be guaranteed after trimming.",
+        Justification = "ADR-0010: Platform.Windows is IsAotCompatible=false by design; dcomp COM interop is the boundary contract."
+    )]
+    private static (
+        IDCompositionDesktopDevice Device,
+        IDCompositionTarget Target,
+        IDCompositionVisual2 Root,
+        IDCompositionVisual2 BackgroundLayer,
+        IDCompositionVisual2 ForegroundLayer,
+        CompositionRenderer Renderer
+    ) AttachDcomp(HWND hwnd, ID3D11Device d3dDevice, LoggerHandle compLog)
     {
-        // `new Compositor()` requires a Windows.System.DispatcherQueue on
-        // the calling thread (RPC_E_WRONG_THREAD otherwise). Microsoft.UI's
-        // lifted dispatcher does NOT satisfy this — they're independent
-        // queues per WinAppSDK docs. WindowsApp.RunCoreAsync stands up
-        // BOTH on this thread (Windows.System first, then Microsoft.UI).
-        var compositor = new Compositor();
-        compLog.Info("Windows.UI.Composition.Compositor created");
+        // 1. dcomp device, with the existing D3D11 device as the rendering
+        //    device. Request IDCompositionDesktopDevice directly so we get
+        //    CreateTargetForHwnd without a second QI.
+        var desktopIid = typeof(IDCompositionDesktopDevice).GUID;
+        PInvoke.DCompositionCreateDevice2(d3dDevice, in desktopIid, out var deviceObj).ThrowOnFailure();
+        var device = (IDCompositionDesktopDevice)deviceObj!;
+        compLog.Info("IDCompositionDesktopDevice created");
 
-        var interop = (ICompositorDesktopInterop)(object)compositor;
-        interop.CreateDesktopWindowTarget((nint)hwnd.Value, isTopmost: false, out var targetPtr);
-        DesktopWindowTarget target;
-        try
-        {
-            // The native call returns a raw IInspectable* — wrap through
-            // CsWinRT's projection helper so we get a real DesktopWindowTarget
-            // (managed cast directly to a WinRT runtime class would fail
-            // because RCWs project as System.__ComObject).
-            target = global::WinRT.MarshalInspectable<DesktopWindowTarget>.FromAbi(targetPtr);
-        }
-        finally
-        {
-            Marshal.Release(targetPtr);
-        }
-        compLog.Info("DesktopWindowTarget bound to HWND");
+        // 2. Target bound to HWND (topmost: false — ex-style WS_EX_TOPMOST
+        //    + SetWindowPos re-assertion in ReassertTopmost own that).
+        device.CreateTargetForHwnd(hwnd, topmost: false, out var target);
+        compLog.Info("IDCompositionTarget bound to HWND");
 
-        var root = compositor.CreateContainerVisual();
-        root.RelativeSizeAdjustment = new System.Numerics.Vector2(1.0f, 1.0f);
-        target.Root = root;
-        compLog.Info("root visual attached");
+        // 3. Root + background/foreground container visuals.
+        device.CreateVisual(out var root);
+        target.SetRoot(root);
 
-        return (compositor, target, root);
+        device.CreateVisual(out var backgroundLayer);
+        device.CreateVisual(out var foregroundLayer);
+
+        // Both children sit at offset 0,0 with no transform — they cover the
+        // full HWND by virtue of the surfaces their descendants attach.
+        // insertAbove=true with referenceVisual=null = put at top of children.
+        root.AddVisual(backgroundLayer, insertAbove: true, referenceVisual: null);
+        root.AddVisual(foregroundLayer, insertAbove: true, referenceVisual: backgroundLayer);
+
+        var renderer = new CompositionRenderer(device, backgroundLayer);
+
+        // 4. First commit so the OS picks up the initial (empty) tree.
+        device.Commit();
+        compLog.Info("dcomp initial commit");
+
+        return (device, target, root, backgroundLayer, foregroundLayer, renderer);
     }
 
     public void Apply(OverlayFrame frame) => _renderer.Apply(frame);
+
+    /// <summary>Commit the visual tree to DWM. Called on UI thread after a tick.</summary>
+    public void Commit() => Device.Commit();
 
     public IntPtr Hwnd => _hwnd;
 
@@ -275,10 +263,14 @@ public sealed class OverlayWindow : IOverlaySurface
         }
 
         _log.Info("dispose begin");
-        _foregroundLayer.Dispose();
-        _backgroundLayer.Dispose();
-        _target.Dispose();
-        Compositor.Dispose();
+        // dcomp objects are COM RCWs — release in reverse order. Renderer
+        // owns its per-layer surfaces; release before the device that minted them.
+        _renderer.Dispose();
+        Marshal.FinalReleaseComObject(_foregroundLayer);
+        Marshal.FinalReleaseComObject(_backgroundLayer);
+        Marshal.FinalReleaseComObject(_root);
+        Marshal.FinalReleaseComObject(_target);
+        Marshal.FinalReleaseComObject(Device);
         Win32Guard.Check(PInvoke.DestroyWindow(_hwnd), "DestroyWindow overlay", _log);
         _disposed = true;
         _log.Info("dispose ok");
@@ -338,28 +330,34 @@ public sealed class OverlayWindow : IOverlaySurface
     private const uint WM_LBUTTONDOWN = 0x0201;
     private const uint WM_RBUTTONDOWN = 0x0204;
     private const uint WM_MBUTTONDOWN = 0x0207;
+    private const uint WM_DESTROY = 0x0002;
+    private const uint WM_TIMER_MSG = 0x0113;
+
+    /// <summary>
+    /// Application-defined "vsync tick" message — posted by the
+    /// <see cref="Rendering.RenderClock"/> pacer thread to drive
+    /// <see cref="OnAppTick"/> on the UI thread after each DWM flip.
+    /// Keep clear of the <c>WM_APP</c> base (0x8000) so a future
+    /// component can mint additional messages without colliding.
+    /// </summary>
+    internal const uint WM_APP_TICK = 0x8001;
+
     private const int HTTRANSPARENT = -1;
 
     private static int _nchitCount;
     private static int _clickCount;
 
     /// <summary>
-    /// WndProc body. Click-through stack:
-    /// <list type="number">
-    ///   <item><c>WS_EX_LAYERED + WS_EX_TRANSPARENT</c> on the HWND (DWM-level routing)</item>
-    ///   <item><c>WM_NCHITTEST → HTTRANSPARENT</c> (this handler — belt and braces)</item>
+    /// WndProc body. Dispatches:
+    /// <list type="bullet">
+    ///   <item><c>WM_NCHITTEST → HTTRANSPARENT</c> (click-through, belt-and-braces with WS_EX_TRANSPARENT)</item>
+    ///   <item><c>WM_APP_TICK → OnAppTick</c> (vsync-paced render tick from pacer thread)</item>
+    ///   <item><c>WM_TIMER → OnWmTimer</c> (hotkey repeat polling timer)</item>
+    ///   <item><c>WM_DESTROY → PostQuitMessage(0)</c> (clean shutdown of the message loop)</item>
     /// </list>
-    /// Diagnostic counters: <c>_nchitCount</c> increments on every NCHITTEST
-    /// hit (logged at TRACE with sampling); <c>_clickCount</c> increments
-    /// when a click leaks past HTTRANSPARENT (logged at WARN — should be 0
-    /// in a working configuration).
     /// </summary>
     private static LRESULT OverlayWndProc(HWND hwnd, uint msg, WPARAM wParam, LPARAM lParam)
     {
-        // _wndProcLog is assigned on first Create() before the window class
-        // is registered, so by the time any WM_* arrives at this callback it
-        // is non-null. Local capture avoids re-reading the static for every
-        // field write.
         var log = _wndProcLog;
         if (msg == WM_NCHITTEST)
         {
@@ -369,6 +367,21 @@ public sealed class OverlayWindow : IOverlaySurface
                 l.Trace("WM_NCHITTEST → HTTRANSPARENT", new LogField("count", n));
             }
             return new LRESULT(HTTRANSPARENT);
+        }
+        if (msg == WM_APP_TICK)
+        {
+            OverlayWndProcDispatch.OnAppTick?.Invoke();
+            return new LRESULT(0);
+        }
+        if (msg == WM_TIMER_MSG)
+        {
+            OverlayWndProcDispatch.OnWmTimer?.Invoke();
+            return new LRESULT(0);
+        }
+        if (msg == WM_DESTROY)
+        {
+            PInvoke.PostQuitMessage(0);
+            return new LRESULT(0);
         }
         if (msg is WM_LBUTTONDOWN or WM_RBUTTONDOWN or WM_MBUTTONDOWN)
         {

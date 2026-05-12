@@ -1,7 +1,14 @@
 # ADR-0011: Tunables as typed TOML records (config externalization)
 
-**Status**: Accepted
-**Date**: 2026-05-11
+**Status**: Superseded by [ADR-0015](0015-tunables-as-compile-time-constants.md)
+**Date**: 2026-05-11 (superseded 2026-05-12)
+
+> Reversed 2026-05-12: the TOML config file approach is incompatible with `<PublishAot>`
+> (Tomlyn requires reflection). Realized that runtime tunability had zero actual consumers
+> — every value is "edit, rebuild, ship", which is the same flow as code changes. ADR-0015
+> retires the file format and moves all tunables back to `static readonly` records on
+> `Linerule.Core.UserConfig.Default`. The 5-record typed schema is preserved verbatim — the
+> data lives in code now.
 
 ## Context
 

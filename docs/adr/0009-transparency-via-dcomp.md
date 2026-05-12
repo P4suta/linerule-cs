@@ -1,7 +1,26 @@
-# ADR-0009: Transparency + click-through via WS_EX_LAYERED + WS_EX_NOREDIRECTIONBITMAP + Windows.UI.Composition + ICompositorDesktopInterop
+# ADR-0009: Transparency + click-through via WS_EX_LAYERED + WS_EX_NOREDIRECTIONBITMAP + DirectComposition
 
-**Status**: Accepted (v3 — supersedes v2's WS_EX_LAYERED-only / Microsoft.UI.Composition path)
-**Date**: 2026-05-11
+**Status**: Accepted (v4 — dcomp-direct, supersedes v3's `Windows.UI.Composition.Compositor` route)
+**Date**: 2026-05-11 (amended 2026-05-12)
+
+> **2026-05-12 amendment (ADR-0010 Phase 2)**: the composition pipeline below
+> the HWND ex-style stack is now **`dcomp.dll` direct** —
+> `DCompositionCreateDevice2(d3dDevice, IID_IDCompositionDesktopDevice, out)`
+> + `device.CreateTargetForHwnd` + `IDCompositionVisual2` /
+> `IDCompositionSurface`, all source-gen'd through `Microsoft.Windows.CsWin32`.
+> The `Windows.UI.Composition.Compositor` route (v3) had a hard dependency
+> on the WinAppSDK + CsWinRT projection layer, which prevented `<PublishAot>`
+> from succeeding (`MarshalInspectable<T>.FromAbi(ptr)` is not fully
+> source-genned in CsWinRT 2.x). Going direct to dcomp drops the WinRT
+> projection requirement entirely; the same `WS_EX_LAYERED + WS_EX_NOREDIRECTIONBITMAP`
+> ex-style mix from v3 carries over unchanged — only the API used to mint
+> the visual tree changed. PowerToys MouseHighlighter remains the production
+> reference; Microsoft itself uses `dcomp.dll` directly in C++ system code.
+> Visuals don't have a direct `SetOpacity` in dcomp, so the HUD attaches
+> an `IDCompositionEffectGroup` (which does) for cursor-fade. The vsync
+> pacer thread calls `DwmFlush()` then `PostMessage(WM_APP_TICK)` to the UI
+> thread; rendering / commit happen single-threaded on the UI thread. See
+> ADR-0010 Phase 2 for the full migration rationale.
 
 ## Accepted: canonical PowerToys pattern
 

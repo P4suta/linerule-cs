@@ -8,9 +8,10 @@ using AppContext = Linerule.Diagnostics.Storage.AppContext;
 using BootDag = Linerule.Diagnostics.Storage.BootDag;
 
 // Boot DAG (typed Kleisli composition): OpenSqlite >=> InitLogger >=>
-// InstallCrash >=> LoadConfig >=> AssembleContext.
+// InstallCrash >=> AssembleContext.
 // Capability tokens enforce ordering at the C# type level — re-shuffling
-// the phases is a compile error, not a runtime drift.
+// the phases is a compile error, not a runtime drift. ADR-0015: tunables
+// are compile-time constants on UserConfig.Default — no LoadConfig phase.
 var boot = await BootDag.Default().Run(BootArgs.FromArgv(args), default).ConfigureAwait(false);
 if (boot is Result<AppContext, BootstrapError>.Err bootErr)
 {

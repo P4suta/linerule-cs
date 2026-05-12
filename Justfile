@@ -124,6 +124,15 @@ format-cs-check:
 typos:
     {{typos_bin}} --color always
 
+# Apply typo fixes in-place across the whole tree. Lefthook already runs
+# `typos --write-changes` over staged files at pre-commit, so the typical
+# loop never needs this recipe; reach for it after a large refactor when
+# many files have changed and you want to fix typos before commit.
+# `_typos.toml` allowlist still applies — Marshalling / HWND / DComp etc.
+# stay protected.
+typos-fix:
+    {{typos_bin}} --write-changes --color always
+
 actionlint:
     {{actionlint_bin}} -color
 
@@ -140,11 +149,40 @@ hooks:
 
 # ----- release / publish -----
 
-# AOT single-file (Release-only by intent).
+# AOT single-file (Release-only by intent). ADR-0010 Phase 2 made this a
+# required CI gate (no longer continue-on-error). win-x64 only — Cli's TFM
+# is net10.0-windows so cross-OS publish from Linux is unsupported; CI runs
+# the actual publish on windows-latest.
 publish-aot:
     {{dotnet}} publish src/Linerule.Cli -c Release -r win-x64 {{dotnet_flags}} \
         /p:PublishAot=true /p:StripSymbols=true \
         -o artifacts/aot
+
+# AOT single-file for the WinExe GUI launcher (Linerule.App). Same shape
+# as publish-aot above; runs under the same windows-latest CI gate.
+publish-dist-aot:
+    {{dotnet}} publish src/Linerule.App -c Release -r win-x64 {{dotnet_flags}} \
+        /p:PublishAot=true /p:StripSymbols=true \
+        -o artifacts/aot-dist
+
+# AOT publish of the xtask lint CLI. Unlike the Cli (Tomlyn) and App (WinAppSDK),
+# XTask has no AOT blockers — it's the one binary in the repo that proves the
+# AOT-readiness machinery actually works end-to-end. linux-x64 because XTask
+# targets net10.0 (cross-platform) and the dev container is Linux.
+publish-xtask-aot:
+    {{dotnet}} publish src/Linerule.XTask -c Release -r linux-x64 {{dotnet_flags}} \
+        /p:PublishAot=true /p:StripSymbols=true \
+        -o artifacts/aot-xtask
+
+# AOT publish of Linerule.Diagnostics.Storage as a shared library.
+# Library AOT publish IS the verification: NativeAOT runs the full trim/AOT
+# analyzer suite over the transitive public surface, so any new reflection
+# that creeps into Storage (or its deps consumed via Storage's public API)
+# breaks this build. The .so output is not shipped — only the build matters.
+publish-storage-aot:
+    {{dotnet}} publish src/Linerule.Diagnostics.Storage -c Release -r linux-x64 {{dotnet_flags}} \
+        /p:PublishAot=true /p:StripSymbols=true \
+        -o artifacts/aot-storage
 
 # Self-contained Release build for ad-hoc local runs (\\wsl.localhost\... path).
 # PublishSingleFile is OFF — WindowsAppSDK 2.x errors out with "PublishSingleFile

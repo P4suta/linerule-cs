@@ -68,6 +68,38 @@ dotnet_diagnostic.CA1851.severity = error  # multiple enumerations
 dotnet_diagnostic.CA2208.severity = error  # ArgumentException correctly
 dotnet_diagnostic.CA1801.severity = error  # unused parameters
 
+# === Severity overrides — Trim / AOT readiness (ADR-0010) ===
+# Per-diagnostic explicit promotion to error. TreatWarningsAsErrors handles
+# the blanket case in Directory.Build.props; this block documents intent at
+# the per-diagnostic level so a future contributor reading the rule sees
+# "AOT readiness, ADR-0010" rather than "blanket TreatWarningsAsErrors
+# happened to catch this." Analyzers themselves are enabled in
+# Directory.Build.props via EnableTrimAnalyzer / EnableAotAnalyzer /
+# EnableSingleFileAnalyzer (independent of IsAotCompatible — see ADR-0010).
+dotnet_diagnostic.IL2026.severity = error  # RequiresUnreferencedCode method called
+dotnet_diagnostic.IL2046.severity = error  # RequiresUnreferencedCode override mismatch
+dotnet_diagnostic.IL2050.severity = error  # P/Invoke COM marshalling
+dotnet_diagnostic.IL2055.severity = error  # MakeGenericType non-trim-safe
+dotnet_diagnostic.IL2057.severity = error  # Type.GetType unrecognized literal
+dotnet_diagnostic.IL2058.severity = error
+dotnet_diagnostic.IL2060.severity = error
+dotnet_diagnostic.IL2062.severity = error
+dotnet_diagnostic.IL2063.severity = error
+dotnet_diagnostic.IL2065.severity = error
+dotnet_diagnostic.IL2067.severity = error
+dotnet_diagnostic.IL2070.severity = error
+dotnet_diagnostic.IL2072.severity = error
+dotnet_diagnostic.IL2075.severity = error  # GetType().GetProperty / GetField / GetMethod
+dotnet_diagnostic.IL2080.severity = error
+dotnet_diagnostic.IL2090.severity = error
+dotnet_diagnostic.IL2091.severity = error
+dotnet_diagnostic.IL2104.severity = error  # assembly produced with trim-incompatible refs
+dotnet_diagnostic.IL3050.severity = error  # RequiresDynamicCode method called
+dotnet_diagnostic.IL3051.severity = error  # RequiresDynamicCode override mismatch
+dotnet_diagnostic.IL3052.severity = error
+dotnet_diagnostic.IL3053.severity = error  # AOT analysis: generic instantiation
+dotnet_diagnostic.IL3056.severity = error
+
 # === Architecturally justified relaxations ===
 
 # CA1034: closed-DU nested-type idiom; see ADR-0002.

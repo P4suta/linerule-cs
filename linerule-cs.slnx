@@ -1,7 +1,6 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/Linerule.Core/Linerule.Core.csproj" />
-    <Project Path="src/Linerule.Config/Linerule.Config.csproj" />
     <Project Path="src/Linerule.Diagnostics/Linerule.Diagnostics.csproj" />
     <Project Path="src/Linerule.Input/Linerule.Input.csproj" />
     <Project Path="src/Linerule.Bootstrap/Linerule.Bootstrap.csproj" />
@@ -14,13 +13,13 @@
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Linerule.Core.Tests/Linerule.Core.Tests.csproj" />
-    <Project Path="tests/Linerule.Config.Tests/Linerule.Config.Tests.csproj" />
     <Project Path="tests/Linerule.Diagnostics.Tests/Linerule.Diagnostics.Tests.csproj" />
     <Project Path="tests/Linerule.Input.Tests/Linerule.Input.Tests.csproj" />
     <Project Path="tests/Linerule.Bootstrap.Tests/Linerule.Bootstrap.Tests.csproj" />
     <Project Path="tests/Linerule.Platform.Tests/Linerule.Platform.Tests.csproj" />
     <Project Path="tests/Linerule.Platform.Windows.Tests/Linerule.Platform.Windows.Tests.csproj" />
     <Project Path="tests/Linerule.Diagnostics.Storage.Tests/Linerule.Diagnostics.Storage.Tests.csproj" />
+    <Project Path="tests/Linerule.XTask.Tests/Linerule.XTask.Tests.csproj" />
   </Folder>
   <Folder Name="/solution/">
     <File Path="Directory.Build.props" />

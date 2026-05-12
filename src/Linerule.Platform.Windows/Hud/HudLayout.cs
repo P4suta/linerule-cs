@@ -1,6 +1,6 @@
 using System.Numerics;
 using System.Runtime.InteropServices;
-using Linerule.Config;
+using Linerule.Core;
 
 namespace Linerule.Platform.Windows.Hud;
 

@@ -30,6 +30,22 @@
     <IsAotCompatible>true</IsAotCompatible>
     <InvariantGlobalization>true</InvariantGlobalization>
 
+    <!-- ADR-0010: AOT/trim/single-file analyzers run on EVERY project,
+         independent of IsAotCompatible. Projects that override
+         IsAotCompatible=false (Cli/App/Platform.Windows for WinAppSDK +
+         Tomlyn reasons) still emit IL2xxx/IL3xxx diagnostics; existing
+         reflection sites are annotated with [Requires*Code] and bubble up
+         to per-site [UnconditionalSuppressMessage(Justification="ADR-0010 ...")]
+         at the composition root. New reflection trips IL2026 → error. -->
+    <EnableTrimAnalyzer>true</EnableTrimAnalyzer>
+    <EnableSingleFileAnalyzer>true</EnableSingleFileAnalyzer>
+    <EnableAotAnalyzer>true</EnableAotAnalyzer>
+
+    <!-- Emit per-call-site trim warnings instead of one aggregated warning per
+         assembly. When we add [UnconditionalSuppressMessage] we want to know
+         *which* call site to annotate, not just "this assembly has issues". -->
+    <TrimmerSingleWarn>false</TrimmerSingleWarn>
+
     <DebugType>embedded</DebugType>
     <Deterministic>true</Deterministic>
     <ContinuousIntegrationBuild Condition="'$(CI)' == 'true'">true</ContinuousIntegrationBuild>

@@ -2,170 +2,124 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 using Linerule.Platform.Windows.Diagnostics;
-using Windows.UI.Composition;
+using Windows.Win32;
+using Windows.Win32.Foundation;
 
 namespace Linerule.Platform.Windows.Rendering;
 
 /// <summary>
-/// Render-loop driver, vsync-aligned via
-/// <see cref="Compositor.RequestCommitAsync"/>. Each iteration waits for
-/// the next compositor commit (which DWM paces at the display's vertical
-/// blank), then samples + applies via the supplied <c>onTick</c> action.
-/// The tick cadence therefore equals the display refresh rate by
-/// construction — no separate timer, no clock drift, no per-frame phase
-/// jitter.
+/// Render-loop driver, vsync-aligned via <c>DwmFlush()</c>. A dedicated
+/// pacer thread blocks on <c>DwmFlush</c> (which returns at the next DWM
+/// flip) and then posts <see cref="OverlayWindow.WM_APP_TICK"/> to the UI
+/// thread. The UI thread's WndProc handler invokes the supplied
+/// <see cref="onTick"/> action, mutates dcomp visuals, and calls
+/// <c>IDCompositionDevice2.Commit()</c> — all single-threaded. The pacer
+/// thread itself never touches dcomp state.
 ///
 /// <para>
-/// <b>Historical context</b>: previous incarnations used a
-/// <c>DispatcherQueueTimer</c> at 2× display refresh, then 1× with
-/// implicit easing, then 1× with direct snap. All three suffered from
-/// independent-clock drift against DWM vsync (the timer fires on the
-/// dispatcher's own scheduler) and produced the frame-to-frame jitter
-/// the user described as "stop-motion / jerky" (jp: <i>kakukaku</i> /
-/// <i>gakugaku</i>). Hitching the loop onto the compositor's own commit
-/// cycle is the structural fix — see ADR-0009 v3 + plan file
-/// <c>repository-state-compressed-conway.md</c>.
+/// ADR-0010 Phase 2: <see cref="Compositor.RequestCommitAsync"/> is gone
+/// along with WinAppSDK. <c>DwmFlush</c> is the simplest AOT-friendly
+/// vsync source — synchronous, blocks until the next vblank, no callback
+/// or await ceremony. Pacing accuracy is one frame at the display refresh
+/// rate, identical to what RequestCommitAsync delivered.
 /// </para>
 ///
 /// <para>
-/// <b>Threading</b>: the loop is started from the UI thread; <c>await</c>
-/// on the projected <c>Task</c> resumes on the dispatcher's
-/// SynchronizationContext, so <c>onTick</c> always runs on the UI thread
-/// where Composition is bound. No marshaling code.
-/// </para>
-///
-/// <para>
-/// <b>Stall protection</b>: <see cref="Compositor.RequestCommitAsync"/>
-/// can hang indefinitely if the compositor is paused (RDP, locked
-/// session, minimized window). Each iteration races the commit
-/// <see cref="Task"/> against a <c>2 × FrameBudget</c> delay; the timer
-/// fires <see cref="RenderStats.RecordCommitTimeout"/> and lets the loop
-/// continue so observability + HUD telemetry don't freeze with the
-/// compositor.
+/// <b>Stall protection</b>: <c>DwmFlush</c> can hang if DWM is paused
+/// (RDP, locked session). The pacer thread loop checks the cancellation
+/// token immediately after each DwmFlush returns; on cancel we exit the
+/// loop and the dispose path joins the thread (bounded by one frame
+/// since DwmFlush always returns within one display refresh).
 /// </para>
 /// </summary>
 public sealed partial class RenderClock : IAsyncDisposable
 {
-    private readonly Compositor _compositor;
     private readonly RenderBudget _budget;
-    private readonly Action _onTick;
-    private readonly TimeSpan _commitTimeout;
     private readonly LoggerHandle _log;
+    private readonly HWND _hwnd;
     private CancellationTokenSource? _cts;
-    private Task? _loopTask;
+    private Thread? _pacerThread;
     private bool _disposed;
 
     public RenderTiming Timing { get; }
     public RenderStats Stats { get; }
 
-    public RenderClock(
-        Compositor compositor,
+    public unsafe RenderClock(
+        IntPtr overlayHwnd,
         RenderTiming timing,
-        Action onTick,
         LoggerHandle log,
         double warnRatio = RenderBudget.DefaultWarnRatio
     )
     {
-        ArgumentNullException.ThrowIfNull(compositor);
-        ArgumentNullException.ThrowIfNull(onTick);
-        _compositor = compositor;
+        _hwnd = new HWND(overlayHwnd.ToPointer());
         Timing = timing;
         Stats = new RenderStats();
         _log = log;
         _budget = new RenderBudget(timing, Stats, log, warnRatio);
-        _onTick = onTick;
-        // Two display frames is the practical ceiling: shorter and a single
-        // slow commit on the GPU side false-positives; longer and a real
-        // stall (RDP / minimized) freezes HUD telemetry too long.
-        const int CommitTimeoutFrames = 2;
-        _commitTimeout = TimeSpan.FromTicks(timing.FrameBudget.Ticks * CommitTimeoutFrames);
 
         _log.Info(
-            "RenderClock configured",
+            "RenderClock configured (dcomp + DwmFlush)",
             new LogField("display_hz", timing.DisplayRefreshHz),
-            new LogField("frame_budget_ms", timing.FrameBudget.TotalMilliseconds),
-            new LogField(Key: "commit_aligned", Value: true),
-            new LogField("commit_timeout_ms", _commitTimeout.TotalMilliseconds)
+            new LogField("frame_budget_ms", timing.FrameBudget.TotalMilliseconds)
         );
     }
 
     /// <summary>
-    /// Start the vsync-aligned loop. Returns immediately; the loop runs
-    /// on the UI thread via async <c>await</c>-continuation resumption.
-    /// Safe to call once per <see cref="RenderClock"/> instance.
+    /// Start the vsync-paced loop. The pacer thread runs in the background
+    /// and posts <see cref="OverlayWindow.WM_APP_TICK"/> after every DwmFlush
+    /// return; the UI thread is responsible for actually invoking the tick
+    /// callback (set on <see cref="OverlayWindow.OnAppTick"/>).
+    /// Idempotent — second call is a no-op.
     /// </summary>
     public void Start()
     {
-        if (_loopTask is not null)
+        if (_pacerThread is not null)
         {
             return;
         }
         _cts = new CancellationTokenSource();
-        _loopTask = RunAsync(_cts.Token);
+        var token = _cts.Token;
+        _pacerThread = new Thread(() => PacerLoop(token)) { IsBackground = true, Name = "linerule-render-pacer" };
+        _pacerThread.Start();
     }
 
-    /// <summary>
-    /// Request the loop stop. The loop exits at the next iteration
-    /// boundary; await <see cref="DisposeAsync"/> to confirm completion.
-    /// </summary>
+    /// <summary>Request the loop stop. Await <see cref="DisposeAsync"/> to confirm completion.</summary>
     public void Stop() => _cts?.Cancel();
 
-    private async Task RunAsync(CancellationToken ct)
+    /// <summary>
+    /// Begin a tick budget window — invoked by the UI-thread WndProc handler
+    /// before <c>onTick</c> runs. Pairs with <see cref="EndTick"/>.
+    /// </summary>
+    public void BeginTick() => _budget.Begin();
+
+    /// <summary>End the tick budget window; emits warn telemetry if exceeded.</summary>
+    public void EndTick() => _budget.End();
+
+    private unsafe void PacerLoop(CancellationToken ct)
     {
         try
         {
-            while (!ct.IsCancellationRequested && !_disposed)
+            while (!ct.IsCancellationRequested)
             {
-                var commit = _compositor.RequestCommitAsync().AsTask(ct);
-                Task? timeout = null;
-                try
-                {
-                    timeout = Task.Delay(_commitTimeout, ct);
-                    var winner = await Task.WhenAny(commit, timeout).ConfigureAwait(true);
-                    if (ct.IsCancellationRequested)
-                    {
-                        return;
-                    }
-                    if (winner == timeout)
-                    {
-                        Stats.RecordCommitTimeout();
-                    }
-                }
-                catch (OperationCanceledException)
+                // Blocks ~1 display refresh (16.67 ms at 60 Hz, 6.94 ms at
+                // 144 Hz). Returns immediately if the compositor is paused
+                // — that's still acceptable since we'll just spin a fast
+                // post loop, and the cancellation check below catches us
+                // on the next iteration.
+                _ = PInvoke.DwmFlush();
+                if (ct.IsCancellationRequested)
                 {
                     return;
                 }
-                finally
-                {
-                    // The Task.Delay loses its CT subscription when GC'd, but
-                    // being explicit avoids accumulating cancellation registrations.
-                    _ = timeout;
-                }
-
-                _budget.Begin();
-                try
-                {
-                    _onTick();
-                }
-                catch (Exception ex)
-                {
-                    // Same swallow-and-log discipline as the old timer-tick path —
-                    // a transient render error shouldn't kill the overlay session.
-                    _log.Error("render tick threw", ex);
-                }
-                finally
-                {
-                    _budget.End();
-                }
+                // PostMessage is thread-safe and queues on the target HWND's
+                // message queue — the UI thread will pump it on the next
+                // GetMessage call.
+                _ = PInvoke.PostMessage(_hwnd, OverlayWindow.WM_APP_TICK, default, default);
             }
-        }
-        catch (OperationCanceledException)
-        {
-            // Normal shutdown — Stop() / DisposeAsync() cancelled us.
         }
         catch (Exception ex)
         {
-            _log.Error("render loop crashed — overlay will stop updating", ex);
+            _log.Error("render pacer thread crashed — overlay will stop updating", ex);
         }
     }
 
@@ -177,55 +131,31 @@ public sealed partial class RenderClock : IAsyncDisposable
         }
         _disposed = true;
 
-        // Capture both lifetime handles into locals BEFORE doing any
-        // async work — Stop() can be invoked re-entrantly during
-        // shutdown and would otherwise see a half-cleared state. Nulling
-        // the fields up-front makes the later operations effectively
-        // owned by this call.
         var cts = _cts;
-        var loopTask = _loopTask;
+        var thread = _pacerThread;
         _cts = null;
-        _loopTask = null;
+        _pacerThread = null;
 
         if (cts is not null)
         {
-            try
-            {
-                await cts.CancelAsync().ConfigureAwait(false);
-            }
-            catch (ObjectDisposedException)
-            {
-                // Already disposed by an earlier path — fine.
-            }
+            await cts.CancelAsync().ConfigureAwait(false);
         }
-        if (loopTask is not null)
+        if (thread is not null)
         {
-            // Bounded wait — a wedged compositor mustn't block shutdown
-            // forever. One second is generous; the loop typically exits
-            // within one commit cycle (~16 ms at 60 Hz). Pass
-            // CancellationToken.None deliberately: we ARE the cancellation,
-            // so further interruption of the wait would risk leaking the
-            // loop task.
-            var winner = await Task.WhenAny(loopTask, Task.Delay(TimeSpan.FromSeconds(1), CancellationToken.None))
-                .ConfigureAwait(false);
-            if (winner != loopTask)
-            {
-                _log.Warn("render loop did not exit within 1 s — abandoning task");
-                // Attach a fault-observer so any post-shutdown exception
-                // from the abandoned task is logged rather than landing
-                // in TaskScheduler.UnobservedTaskException silently.
-                var log = _log;
-                _ = loopTask.ContinueWith(
-                    t =>
+            // Bounded join: a wedged DwmFlush returns within one display
+            // refresh, so 100 ms is generous. Run the join on the threadpool
+            // to avoid blocking the awaiter (e.g. a UI thread).
+            await Task.Run(
+                    () =>
                     {
-                        if (t.IsFaulted && t.Exception is { } ex)
+                        if (!thread.Join(TimeSpan.FromMilliseconds(100)))
                         {
-                            log.Error("abandoned render loop task threw post-shutdown", ex);
+                            _log.Warn("render pacer thread did not exit within 100 ms — abandoning");
                         }
                     },
-                    TaskScheduler.Default
-                );
-            }
+                    CancellationToken.None
+                )
+                .ConfigureAwait(false);
         }
         cts?.Dispose();
     }

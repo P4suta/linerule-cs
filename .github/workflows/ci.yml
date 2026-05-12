@@ -109,17 +109,68 @@ jobs:
           name: linerule-win-x64
           path: artifacts/publish/
 
-  aot-canary:
-    name: aot canary (windows)
+  aot-cli:
+    # ADR-0010 Phase 2: Cli's `<PublishAot>` is a required gate (was a
+    # continue-on-error canary while WinAppSDK + Tomlyn blocked it; Phase 2A
+    # retired Tomlyn / ADR-0015, Phase 2B retired WinAppSDK / ADR-0009 dcomp-
+    # direct). win-x64 / windows-latest because Cli's TFM is net10.0-windows.
+    name: aot publish (cli, windows-latest)
     runs-on: windows-latest
     timeout-minutes: 30
-    continue-on-error: true
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
       - uses: actions/setup-dotnet@c2fa09f4bde5ebb9d1777cf28262a3eb3db3ced7  # v5.2.0
         with:
           global-json-file: global.json
       - run: dotnet publish src/Linerule.Cli -c Release -r win-x64 /p:PublishAot=true -o artifacts/aot
+
+  aot-app:
+    # GUI launcher (WinExe). Same constraints as aot-cli — required, win-x64.
+    name: aot publish (app, windows-latest)
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+      - uses: actions/setup-dotnet@c2fa09f4bde5ebb9d1777cf28262a3eb3db3ced7  # v5.2.0
+        with:
+          global-json-file: global.json
+      - run: dotnet publish src/Linerule.App -c Release -r win-x64 /p:PublishAot=true -o artifacts/aot-dist
+
+  aot-xtask:
+    # XTask is the one Exe in the repo with no AOT blockers (no Tomlyn, no
+    # WinAppSDK, no CsWin32). The job IS allowed to fail the build — it's the
+    # smoke test that proves the AOT-readiness machinery (analyzers,
+    # BannedSymbols, IPathfulSink, AotBoundary) actually delivers a working
+    # native binary, and a regression here means a real reflection vector
+    # crept in elsewhere. Per ADR-0010.
+    name: aot publish (xtask, linux-x64)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+      - uses: actions/setup-dotnet@c2fa09f4bde5ebb9d1777cf28262a3eb3db3ced7  # v5.2.0
+        with:
+          global-json-file: global.json
+      - run: dotnet publish src/Linerule.XTask -c Release -r linux-x64 /p:PublishAot=true /p:StripSymbols=true -o artifacts/aot-xtask
+      - name: Smoke-test the AOT binary
+        run: ./artifacts/aot-xtask/linerule-xtask strict-code
+
+  aot-storage:
+    # Library-level AOT publish for Linerule.Diagnostics.Storage. The library
+    # carries <IsAotCompatible>true</IsAotCompatible>; this job is the actual
+    # verification that the claim is true at every transitive public surface.
+    # If reflection creeps into Storage (or anything Storage exposes), the
+    # trim/AOT analyzer fails this build. The .so output is discarded — only
+    # the build success matters. Per ADR-0010.
+    name: aot publish (storage lib, linux-x64)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+      - uses: actions/setup-dotnet@c2fa09f4bde5ebb9d1777cf28262a3eb3db3ced7  # v5.2.0
+        with:
+          global-json-file: global.json
+      - run: dotnet publish src/Linerule.Diagnostics.Storage -c Release -r linux-x64 /p:PublishAot=true /p:StripSymbols=true -o artifacts/aot-storage
 
   format:
     name: format (csharpier + dotnet format)

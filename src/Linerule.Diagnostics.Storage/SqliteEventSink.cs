@@ -53,8 +53,16 @@ namespace Linerule.Diagnostics.Storage;
 /// lint-time error workspace-wide.
 /// </para>
 /// </summary>
-public sealed partial class SqliteEventSink : ILogSink, IDisposable
+public sealed partial class SqliteEventSink : IPathfulSink, IDisposable
 {
+    /// <summary>
+    /// Absolute path of the SQLite event store this sink writes to. Read
+    /// once by <c>LoggerRoot</c> for the crash-dump <c>ctx.db</c> field.
+    /// Exposed via <see cref="IPathfulSink"/> so the dispatch is typed and
+    /// AOT-safe (ADR-0010).
+    /// </summary>
+    public string Path { get; }
+
     // ── SQL ──────────────────────────────────────────────────────────────
     // All command text lives here as constants. Parameter names use SQLite's
     // `$name` form (also accepted by Microsoft.Data.Sqlite).
@@ -121,10 +129,11 @@ public sealed partial class SqliteEventSink : ILogSink, IDisposable
         ArgumentException.ThrowIfNullOrEmpty(path);
         ArgumentNullException.ThrowIfNull(run);
 
+        Path = path;
         _runId = run.RunId;
         _time = timeProvider ?? TimeProvider.System;
 
-        Directory.CreateDirectory(Path.GetDirectoryName(path) ?? ".");
+        Directory.CreateDirectory(System.IO.Path.GetDirectoryName(path) ?? ".");
 
         var cs = new SqliteConnectionStringBuilder
         {

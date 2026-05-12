@@ -34,6 +34,8 @@ RUN apt-get update \
         sudo \
         nodejs \
         npm \
+        clang \
+        zlib1g-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # typos

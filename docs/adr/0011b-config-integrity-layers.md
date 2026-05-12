@@ -1,7 +1,12 @@
 # ADR-0011b: Config integrity is two layers, not one
 
-**Status**: Accepted
-**Date**: 2026-05-11
+**Status**: Superseded by [ADR-0015](0015-tunables-as-compile-time-constants.md)
+**Date**: 2026-05-11 (superseded 2026-05-12)
+
+> Reversed 2026-05-12: with the config file removed (ADR-0015), there is nothing to validate
+> at boot — `UserConfig.Default` is constructed from typed C# literals that the compiler
+> already verifies. The two-layer integrity pipeline (FileIntegrity → Tomlyn → Validator
+> → diagnostic-rich error rendering) was deleted along with `Linerule.Config`.
 
 ## Context
 
