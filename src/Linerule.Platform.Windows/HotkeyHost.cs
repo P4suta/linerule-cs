@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Runtime.InteropServices;
@@ -26,7 +27,11 @@ public sealed class HotkeyHost : IHotkeyHost
     private const string ClassName = "linerule-cs-hotkey-host";
 
     private static WNDPROC? _wndProcKeepAlive;
-    private static readonly Dictionary<nint, HotkeyHost> HostByHwnd = [];
+    // ConcurrentDictionary, not Dictionary: Create/Dispose may run on the
+    // bootstrap async path while HotkeyWndProc dispatches on the Win32 UI
+    // thread (the message-only window's pump). Even though the overlay is
+    // single-instance, those entry/exit hops cross threads.
+    private static readonly ConcurrentDictionary<nint, HotkeyHost> HostByHwnd = new();
 
     private readonly HWND _hwnd;
     private readonly LoggerHandle _log;
@@ -167,7 +172,7 @@ public sealed class HotkeyHost : IHotkeyHost
 
         _channel.Writer.TryComplete();
         Win32Guard.Check(PInvoke.DestroyWindow(_hwnd), "DestroyWindow hotkey host", _log);
-        HostByHwnd.Remove((nint)_hwnd.Value);
+        HostByHwnd.TryRemove((nint)_hwnd.Value, out _);
         _disposed = true;
         _log.Info("dispose ok");
         return ValueTask.CompletedTask;

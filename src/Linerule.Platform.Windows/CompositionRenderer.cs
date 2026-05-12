@@ -71,7 +71,7 @@ internal sealed class CompositionRenderer(IDCompositionDesktopDevice device, IDC
         {
             UpdateLayer(_pool[i], frame.Layers[i], i, out var updated);
             if (
-                updated.Surface != _pool[i].Surface
+                !ReferenceEquals(updated.Surface, _pool[i].Surface)
                 || updated.LastColor != _pool[i].LastColor
                 || updated.LastWidth != _pool[i].LastWidth
                 || updated.LastHeight != _pool[i].LastHeight
