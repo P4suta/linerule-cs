@@ -47,7 +47,11 @@ jobs:
             **/packages.lock.json
             global.json
 
-      - run: dotnet restore --locked-mode
+      # No `--locked-mode`: GitHub-hosted runner SDK patch versions drift
+      # vs the container that generated the lockfile (NU1004 on bundled
+      # Microsoft.NET.ILLink.Tasks). The lockfile still drives the cache
+      # key, but NuGet is allowed to refresh it silently when SDKs differ.
+      - run: dotnet restore
       - run: dotnet build -c Release --no-restore --nologo
 
       - name: Test (with coverage)
@@ -96,7 +100,11 @@ jobs:
             **/Directory.Packages.props
             global.json
 
-      - run: dotnet restore --locked-mode
+      # No `--locked-mode`: GitHub-hosted runner SDK patch versions drift
+      # vs the container that generated the lockfile (NU1004 on bundled
+      # Microsoft.NET.ILLink.Tasks). The lockfile still drives the cache
+      # key, but NuGet is allowed to refresh it silently when SDKs differ.
+      - run: dotnet restore
       - run: dotnet build -c Release --no-restore --nologo
       - run: dotnet test -c Release --no-build --nologo
 
@@ -249,7 +257,11 @@ jobs:
           cache-dependency-path: |
             **/packages.lock.json
             global.json
-      - run: dotnet restore --locked-mode
+      # No `--locked-mode`: GitHub-hosted runner SDK patch versions drift
+      # vs the container that generated the lockfile (NU1004 on bundled
+      # Microsoft.NET.ILLink.Tasks). The lockfile still drives the cache
+      # key, but NuGet is allowed to refresh it silently when SDKs differ.
+      - run: dotnet restore
       - name: dotnet list package --vulnerable
         run: |
           set -euo pipefail

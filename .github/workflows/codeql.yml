@@ -46,7 +46,9 @@ jobs:
           # cached DB and shave the analyze step from ~7m to ~2-3m.
           dependency-caching: true
 
-      - run: dotnet restore --locked-mode
+      # See note in ci.yml — locked-mode trips NU1004 on bundled framework
+      # packages when the runner SDK patch differs from the lockfile's.
+      - run: dotnet restore
       - run: dotnet build -c Release --no-restore --nologo
 
       - name: Perform CodeQL Analysis
