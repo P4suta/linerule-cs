@@ -1,7 +1,7 @@
 # ADR-0007: Release pipeline
 
-**Status**: Accepted (amended 2026-05-11 — two-frontend split)
-**Date**: 2026-05-11
+**Status**: Superseded in part by ADR-0017 (rolling AOT GUI release, 2026-05-20). The semver tag-triggered model described below remains the planned v0.1 stable path; ADR-0017 covers the rolling `latest` build that ships in the meantime.
+**Date**: 2026-05-11 (amended 2026-05-11 — two-frontend split; 2026-05-20 — partial supersession by ADR-0017)
 
 ## Context
 
@@ -57,3 +57,8 @@ GitHub Actions are SHA-pinned (memory: `feedback_prefer_latest_not_pinning`); De
   `Linerule.App` half of the table above still needs a parallel `publish-dist`
   recipe and matching CI step; that work is tracked separately so this ADR can
   land alongside the slim-narrative pass.
+- Rolling-release status (2026-05-20): a separate "rolling `latest`" pipeline
+  is now live for the AOT GUI binary (ADR-0017, `.github/workflows/release.yml`).
+  The semver `v*.*.*` flow specified above is not implemented yet — it remains
+  the planned v0.1 stable cut, to be added alongside (not instead of) the
+  rolling pipeline when API/UX stabilize.
