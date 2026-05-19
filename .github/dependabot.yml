@@ -2,6 +2,12 @@ version: 2
 
 # Dependabot is the only allowed scheduled job (memory: feedback_no_cron_in_repos).
 # Bumps NuGet weekly; bumps GitHub Actions weekly to the latest SHA pin.
+#
+# Every entry pins commit-message.prefix to "build(deps)" so the
+# `conventional commits` CI gate (wagoid/commitlint-github-action against
+# @commitlint/config-conventional) accepts dependabot-authored commits
+# without manual rewrites. Without this prefix, dependabot emits
+# `Bump xxx from y to z` headlines which fail subject-empty / type-empty.
 
 updates:
   - package-ecosystem: nuget
@@ -9,6 +15,8 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 10
+    commit-message:
+      prefix: "build(deps)"
     groups:
       analyzers:
         patterns:
@@ -29,12 +37,16 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    commit-message:
+      prefix: "build(deps)"
 
   - package-ecosystem: npm
     directory: "/"
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    commit-message:
+      prefix: "build(deps)"
     groups:
       commitlint:
         patterns:
@@ -45,3 +57,5 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    commit-message:
+      prefix: "build(deps)"
