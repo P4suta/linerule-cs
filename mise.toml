@@ -1,15 +1,15 @@
 # Project-local tool versions for the linerule-cs dev env.
 #
-# Mirrors the Dockerfile ARG <TOOL>_VERSION values (and global.json's
-# dotnet SDK) so the host-side hooks installed by `lefthook install` see
-# the same binaries as container-side `just <recipe>` invocations. Run
-# `mise install` once per clone; lefthook.yml resolves all command names
-# from this manifest plus `dotnet tool restore`-installed local tools
-# (.config/dotnet-tools.json — currently csharpier 1.2.6).
+# Policy: track latest. Each entry resolves to the newest stable release at
+# `mise install` time, so devs picking up a fresh clone always run the same
+# tooling CI / Dependabot is testing. global.json keeps `rollForward:
+# latestMajor` on the dotnet SDK, and bun's lockfile is regenerated locally
+# (see .gitignore), so reproducibility is maintained without freezing
+# upstream improvements.
 
 [tools]
-dotnet = "10.0.203"     # tracks global.json (rollForward latestMajor)
-actionlint = "1.7.12"
-lefthook = "2.1.6"
-typos = "1.46.1"
-node = "24"             # current LTS; npx commitlint only needs a modern node
+dotnet = "latest"
+actionlint = "latest"
+lefthook = "latest"
+typos = "latest"
+bun = "latest"   # commitlint package manager + runtime (replaces npm)

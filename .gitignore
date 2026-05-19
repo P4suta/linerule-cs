@@ -34,8 +34,9 @@ packages/
 # In-workspace caches (compose.yml routes NUGET_PACKAGES / DOTNET_CLI_HOME / NPM_CONFIG_CACHE here).
 .cache/
 
-# Node / commitlint (tooling-only package.json — lockfile is regenerated locally).
+# Bun / commitlint (tooling-only package.json — lockfile is regenerated locally).
 node_modules/
+bun.lock
 package-lock.json
 
 # AOT / native
