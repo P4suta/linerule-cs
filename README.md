@@ -22,6 +22,17 @@ docs/adr/                                ADRs (mirror Rust 1:1)
 
 Two frontends share the same `Linerule.Core` / `Linerule.Platform.Windows` / `Linerule.Diagnostics.Storage` hexagon — terminal use goes through the CLI, double-click goes through the GUI launcher. See ADR-0007 for the split.
 
+## Download
+
+Pre-built **rolling `latest`** AOT GUI build for Windows x64 (~8 MB, refreshed automatically on every `main` merge — see [ADR-0017](docs/adr/0017-rolling-release-pipeline.md)):
+
+- [`Linerule-aot-win-x64.zip`](https://github.com/P4suta/linerule-cs/releases/latest/download/Linerule-aot-win-x64.zip) — the GUI launcher `Linerule.exe` (capital L). Unzip anywhere and double-click.
+- [`sha256sums.txt`](https://github.com/P4suta/linerule-cs/releases/latest/download/sha256sums.txt) — SHA-256 of the zip above.
+
+Binaries are not code-signed, so the first launch trips Windows SmartScreen. Choose **More info → Run anyway**. The release page itself lives at [github.com/P4suta/linerule-cs/releases/tag/latest](https://github.com/P4suta/linerule-cs/releases/tag/latest); the auto-generated body lists the conventional-commit subjects merged since the previous rolling cut.
+
+For terminal use (`linerule.exe` CLI), build from source: `just publish` (see below).
+
 ## Build (Docker-first)
 
 The dev container holds .NET 10 SDK + every Linux-side tool — host needs only Docker.
