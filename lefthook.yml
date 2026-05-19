@@ -1,5 +1,5 @@
 # lefthook — git hooks runner.
-# Install once with: `lefthook install` (memory: 2026-wave dev tooling).
+# Install once with: `just hooks` (or `lefthook install`).
 #
 # Pre-commit policy: anything a tool can fix mechanically (formatting,
 # canonical spelling) is fixed in-place and re-staged. Only checks that
@@ -7,16 +7,25 @@
 # bad commit-msg headers) fail the commit. This keeps the hook a help,
 # not a hurdle.
 
-# Tools assumed on PATH (mise-managed in the user's WSL env):
-#   csharpier (via `dotnet tool restore` + `dotnet csharpier`)
-#   typos
+# Tools assumed on host PATH — provisioned by `mise install` reading
+# project-local mise.toml at the repo root:
+#   dotnet (SDK tracks global.json)
 #   actionlint
-#   npx (for commitlint)
-#   dotnet
+#   typos
+#   node + npx (for commitlint)
+# Plus `dotnet tool restore` from .config/dotnet-tools.json provides:
+#   csharpier (via `dotnet csharpier`)
 
 assert_lefthook_installed: true
 no_tty: false
 colors: true
+
+# Each command goes through `mise exec --` so the project-pinned versions
+# from mise.toml resolve regardless of how the dev shell was activated.
+# Lefthook v2 has no top-level `env:`, and the hook script runs under
+# /bin/sh which does not inherit `mise activate` shell hooks — `mise exec
+# --` is the portable answer. `mise` itself only needs to be on PATH,
+# which `~/.local/bin/mise` (its standard install location) satisfies.
 
 pre-commit:
   # Serial so fixers cannot race each other on the same file. Each step
@@ -27,24 +36,24 @@ pre-commit:
     csharpier-format:
       tags: format
       glob: "*.cs"
-      run: dotnet csharpier format {staged_files}
+      run: mise exec -- dotnet csharpier format {staged_files}
       stage_fixed: true
 
     dotnet-format-style:
       tags: lint
       glob: "*.cs"
-      run: dotnet format style --include {staged_files} --no-restore
+      run: mise exec -- dotnet format style --include {staged_files} --no-restore
       stage_fixed: true
 
     dotnet-format-analyzers:
       tags: lint
       glob: "*.cs"
-      run: dotnet format analyzers --include {staged_files} --no-restore
+      run: mise exec -- dotnet format analyzers --include {staged_files} --no-restore
       stage_fixed: true
 
     typos-fix:
       tags: spell
-      run: typos --write-changes {staged_files}
+      run: mise exec -- typos --write-changes {staged_files}
       stage_fixed: true
 
     # Below this line: checks only — these report violations the author has
@@ -52,17 +61,17 @@ pre-commit:
     actionlint:
       tags: ci
       glob: "{.github/workflows/*.yml,.github/workflows/*.yaml}"
-      run: actionlint -color {staged_files}
+      run: mise exec -- actionlint -color {staged_files}
 
     xtask-strict:
       tags: lint
       glob: "*.cs"
-      run: dotnet run --project src/Linerule.XTask -- strict-code
+      run: mise exec -- dotnet run --project src/Linerule.XTask -- strict-code
 
 commit-msg:
   commands:
     commitlint:
-      run: npx --no -- commitlint --edit {1}
+      run: mise exec -- npx --no -- commitlint --edit {1}
 
 pre-push:
   # piped = run in declaration order, stop on first failure. Publish is
@@ -71,7 +80,7 @@ pre-push:
   piped: true
   commands:
     test:
-      run: dotnet test --nologo --no-restore
+      run: mise exec -- dotnet test --nologo --no-restore
 
     publish:
       # Mirrors `just publish` (Justfile) — self-contained Release build
@@ -79,4 +88,4 @@ pre-push:
       # pass, so a clean `git push` always leaves the publish artifact in
       # sync with HEAD (avoids the "ran stale exe and chased a phantom
       # bug" failure mode).
-      run: dotnet publish src/Linerule.Cli -c Release -r win-x64 /p:SelfContained=true -o artifacts/publish --nologo -v minimal
+      run: mise exec -- dotnet publish src/Linerule.Cli -c Release -r win-x64 /p:SelfContained=true -o artifacts/publish --nologo -v minimal
