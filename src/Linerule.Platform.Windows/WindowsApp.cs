@@ -73,11 +73,8 @@ public static partial class WindowsApp
     {
         using var sessionScope = logger.PushSession(Guid.NewGuid());
         var d3dDevice = D3D11Devices.CreateBgra(log);
-        // D2D device wraps d3dDevice; it MUST be the rendering device handed
-        // to DCompositionCreateDevice2 inside OverlayWindow.AttachDcomp so
-        // IDCompositionSurface::BeginDraw(IID_ID2D1DeviceContext) is legal
-        // (the D3D11-rooted form returns E_NOINTERFACE → InvalidCastException
-        // on every frame). See ADR-0009 v4 amendment.
+        // d2dDevice is the rendering device for the dcomp surface chain — see
+        // ADR-0009 v4 amendment for why ID3D11Device cannot stand in here.
         var d2dDevice = D3D11Devices.CreateD2DDevice(d3dDevice, log);
         var monitor = MonitorInfo.PrimaryBounds(logger.For(Subsystems.Win32));
         var timing = RenderTiming.Probe(log, config.Render.FallbackRefreshHz);
@@ -127,8 +124,6 @@ public static partial class WindowsApp
 
         OverlayWndProcDispatch.OnAppTick = null;
         await ShutdownAsync(loop, hotkeys, overlay, log).ConfigureAwait(false);
-        // Release in reverse construction order: D2D first (depends on D3D11
-        // via IDXGIDevice), D3D11 last.
         Marshal.FinalReleaseComObject(d2dDevice);
         Marshal.FinalReleaseComObject(d3dDevice);
         return 0;
