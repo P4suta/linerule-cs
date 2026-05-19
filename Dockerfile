@@ -20,10 +20,22 @@ ENV DEBIAN_FRONTEND=noninteractive \
     DOTNET_ENVIRONMENT=Development \
     INSIDE_CONTAINER=1
 
-ARG TYPOS_VERSION=1.46.1
-ARG ACTIONLINT_VERSION=1.7.12
-ARG LEFTHOOK_VERSION=2.1.6
-ARG JUST_VERSION=1.51.0
+# Node major is the current active LTS line — `@commitlint/cli` v21 (used by
+# the commit-msg hook via `npx --no -- commitlint`) requires Node >= 20.
+# Debian 12's apt ships nodejs 18, so install from NodeSource instead. The
+# major track gets minor/patch updates automatically via apt; the major
+# itself moves once per ~2 years and is bumped here by hand when the LTS
+# line rolls over (Node 22 took over active LTS in Oct 2024).
+ARG NODE_MAJOR=22
+
+# Each host-side tool (typos / actionlint / lefthook / just) resolves its
+# tag at build time by following the `releases/latest` 302 redirect on
+# GitHub — no API token, no rate-limit pressure, no manual ARG bumps. The
+# trade-off is build-time non-determinism (today's rebuild and tomorrow's
+# may produce different versions), accepted in exchange for staying
+# current without a bot-driven config flywheel. The host's mise / asdf
+# can drift behind this container's bins; that's fine because Justfile
+# routes every recipe through `docker compose run --rm dev`.
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
@@ -32,29 +44,43 @@ RUN apt-get update \
         git \
         unzip \
         sudo \
-        nodejs \
-        npm \
+        gnupg \
         clang \
         zlib1g-dev \
+    && mkdir -p /etc/apt/keyrings \
+    && curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key \
+        | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg \
+    && echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_${NODE_MAJOR}.x nodistro main" \
+        > /etc/apt/sources.list.d/nodesource.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends nodejs \
     && rm -rf /var/lib/apt/lists/*
 
-# typos
-RUN curl -fsSL "https://github.com/crate-ci/typos/releases/download/v${TYPOS_VERSION}/typos-v${TYPOS_VERSION}-x86_64-unknown-linux-musl.tar.gz" \
+# typos — tag like `v1.46.2`; asset name embeds the same `v`-prefixed version.
+RUN TYPOS_VERSION="$(curl -fsSL -o /dev/null -w '%{url_effective}' \
+        'https://github.com/crate-ci/typos/releases/latest' | sed 's|.*/v||')" \
+    && curl -fsSL "https://github.com/crate-ci/typos/releases/download/v${TYPOS_VERSION}/typos-v${TYPOS_VERSION}-x86_64-unknown-linux-musl.tar.gz" \
         | tar -xz -C /usr/local/bin ./typos \
     && chmod +x /usr/local/bin/typos
 
-# actionlint
-RUN curl -fsSL "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz" \
+# actionlint — tag like `v1.7.12`; asset filename uses the bare version.
+RUN ACTIONLINT_VERSION="$(curl -fsSL -o /dev/null -w '%{url_effective}' \
+        'https://github.com/rhysd/actionlint/releases/latest' | sed 's|.*/v||')" \
+    && curl -fsSL "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz" \
         | tar -xz -C /usr/local/bin actionlint \
     && chmod +x /usr/local/bin/actionlint
 
 # lefthook (v2 ships .deb/.apk/.rpm only — pick .deb on the Debian-based SDK image).
-RUN curl -fsSL "https://github.com/evilmartians/lefthook/releases/download/v${LEFTHOOK_VERSION}/lefthook_${LEFTHOOK_VERSION}_amd64.deb" -o /tmp/lefthook.deb \
+RUN LEFTHOOK_VERSION="$(curl -fsSL -o /dev/null -w '%{url_effective}' \
+        'https://github.com/evilmartians/lefthook/releases/latest' | sed 's|.*/v||')" \
+    && curl -fsSL "https://github.com/evilmartians/lefthook/releases/download/v${LEFTHOOK_VERSION}/lefthook_${LEFTHOOK_VERSION}_amd64.deb" -o /tmp/lefthook.deb \
     && dpkg -i /tmp/lefthook.deb \
     && rm /tmp/lefthook.deb
 
-# just (so the in-container shell can re-enter the same Justfile recipes)
-RUN curl -fsSL "https://github.com/casey/just/releases/download/${JUST_VERSION}/just-${JUST_VERSION}-x86_64-unknown-linux-musl.tar.gz" \
+# just — tag is the bare version (no `v` prefix on releases since 1.x).
+RUN JUST_VERSION="$(curl -fsSL -o /dev/null -w '%{url_effective}' \
+        'https://github.com/casey/just/releases/latest' | sed 's|.*/||')" \
+    && curl -fsSL "https://github.com/casey/just/releases/download/${JUST_VERSION}/just-${JUST_VERSION}-x86_64-unknown-linux-musl.tar.gz" \
         | tar -xz -C /usr/local/bin just \
     && chmod +x /usr/local/bin/just
 
