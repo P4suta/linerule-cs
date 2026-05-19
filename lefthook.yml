@@ -12,7 +12,7 @@
 #   dotnet (SDK tracks global.json)
 #   actionlint
 #   typos
-#   bun (for `bun install` + commitlint runtime; replaces npm)
+#   node + npx (for commitlint)
 # Plus `dotnet tool restore` from .config/dotnet-tools.json provides:
 #   csharpier (via `dotnet csharpier`)
 
@@ -71,7 +71,7 @@ pre-commit:
 commit-msg:
   commands:
     commitlint:
-      run: mise exec -- bun x commitlint --edit {1}
+      run: mise exec -- npx --no -- commitlint --edit {1}
 
 pre-push:
   # piped = run in declaration order, stop on first failure. Publish is
