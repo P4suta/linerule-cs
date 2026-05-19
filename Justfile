@@ -50,7 +50,18 @@ dev-down:
 # ----- .NET workflow (Debug = default) -----
 
 restore:
-    {{dotnet}} restore --nologo -v {{dotnet_v}}
+    # `-p:EnableWindowsTargeting=true` is mirrored from Directory.Build.props
+    # because dotnet 10.0.300's restore evaluates the framework-reference
+    # graph before reading Directory.Build.props on Linux hosts (NETSDK1100).
+    # `dotnet build` does pick the prop up correctly, so this is restore-only.
+    {{dotnet}} restore -p:EnableWindowsTargeting=true --nologo -v {{dotnet_v}}
+
+# Regenerate every project's NuGet packages.lock.json from current
+# Directory.Packages.props. Run after bumping a dependency by hand or
+# resolving Dependabot drift; CI restores with --locked-mode so the
+# committed lockfile is the source of truth.
+lock:
+    {{dotnet}} restore --use-lock-file --force-evaluate -p:EnableWindowsTargeting=true --nologo -v {{dotnet_v}}
 
 build *config="Debug":
     {{dotnet}} build -c {{config}} {{dotnet_flags}}

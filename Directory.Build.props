@@ -51,6 +51,15 @@
     <ContinuousIntegrationBuild Condition="'$(CI)' == 'true'">true</ContinuousIntegrationBuild>
 
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
+
+    <!-- NuGet lock file mode — `dotnet restore` writes a per-project
+         packages.lock.json that records the fully-resolved transitive graph,
+         making `actions/setup-dotnet`'s cache hit at the dependency-graph
+         level rather than the timestamp level. Required for the CI cache
+         key (cache-dependency-path: '**/packages.lock.json') to be stable
+         across runs. CI uses `restore --locked-mode` so any drift between
+         lockfile and central package versions fails the build. -->
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
   </PropertyGroup>
 
   <!-- Cross-build Windows-targeted projects on Linux. -->
