@@ -1,0 +1,159 @@
+# linerule-cs rolling release pipeline. See ADR-0017.
+#
+# Trigger: every push to main (= merge) rebuilds the GUI AOT binary
+# (`Linerule.exe`, win-x64) and force-recreates the GitHub Release tagged
+# `latest`. The fixed download URL
+# https://github.com/P4suta/linerule-cs/releases/latest/download/Linerule-aot-win-x64.zip
+# always points at the freshest main HEAD.
+#
+# Stable semver releases are out of scope here (ADR-0007 captures the
+# planned `v*.*.*` flow; this workflow does not interfere with it because
+# `latest` is a fixed tag in a separate namespace).
+#
+# Every action is SHA-pinned; Dependabot bumps weekly via the
+# github-actions ecosystem entry in .github/dependabot.yml.
+
+name: release
+
+on:
+  push:
+    branches: [main]
+  # Manual escape hatch — re-run latest against any already-merged SHA
+  # (e.g. to retry a transient AOT publish failure without an empty
+  # docs commit).
+  workflow_dispatch:
+
+permissions:
+  contents: write   # release create + tag force-update + asset upload
+
+concurrency:
+  group: release
+  cancel-in-progress: true
+
+jobs:
+  build-aot:
+    name: build AOT GUI (windows-latest)
+    # `windows-latest` is being redirected to `windows-2025-vs2026` by GitHub
+    # by 2026-06-15 (per-run Annotations notice). Explicit pin keeps the
+    # annotation list clean; revert to `windows-latest` once the redirect
+    # finishes and the alias is stable.
+    runs-on: windows-2025-vs2026
+    timeout-minutes: 30
+    outputs:
+      version: ${{ steps.version.outputs.value }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          fetch-depth: 0   # git-cliff walks history; release-job download-artifact preserves the workspace anyway, but this job also needs the short SHA.
+
+      - uses: actions/setup-dotnet@c2fa09f4bde5ebb9d1777cf28262a3eb3db3ced7  # v5.2.0
+        with:
+          global-json-file: global.json
+          cache: true
+          cache-dependency-path: |
+            **/packages.lock.json
+            global.json
+
+      - id: version
+        shell: bash
+        run: |
+          SHORT_SHA=$(git rev-parse --short=7 HEAD)
+          DATE=$(date -u +%Y%m%d)
+          echo "value=0.0.0-rolling.${DATE}.${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+
+      - name: dotnet restore
+        run: dotnet restore
+
+      - name: Publish AOT (GUI, win-x64)
+        # Mirrors `just publish-dist-aot` but adds the dynamic Version
+        # injection so the assembly stamp matches the release name.
+        run: |
+          dotnet publish src/Linerule.App `
+            -c Release `
+            -r win-x64 `
+            /p:PublishAot=true `
+            /p:StripSymbols=true `
+            /p:Version=${{ steps.version.outputs.value }} `
+            -o artifacts/aot-dist
+
+      - name: Pack zip
+        shell: pwsh
+        run: |
+          Compress-Archive -Path artifacts/aot-dist/* -DestinationPath Linerule-aot-win-x64.zip
+
+      - name: Compute SHA-256
+        shell: bash
+        run: |
+          sha256sum Linerule-aot-win-x64.zip > sha256sums.txt
+          cat sha256sums.txt
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: release-bundle
+          path: |
+            Linerule-aot-win-x64.zip
+            sha256sums.txt
+          retention-days: 7
+
+  release:
+    name: publish GitHub Release
+    needs: build-aot
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          fetch-depth: 0  # git-cliff needs full history
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with:
+          name: release-bundle
+          path: dist/
+
+      - name: Generate release notes (git-cliff)
+        uses: orhun/git-cliff-action@f50e11560dce63f7c33227798f90b924471a88b5  # v4.8.0
+        with:
+          config: cliff.toml
+          args: --unreleased --strip header
+        env:
+          OUTPUT: release-notes.md
+
+      - name: Create draft release with assets
+        # GitHub's "Immutable releases" repo setting (default on for new
+        # repos) (a) rejects asset uploads to an already-published release
+        # and (b) reserves any tag a published release has used, even
+        # after the release is deleted. softprops uploads each `files`
+        # entry as a separate API call after the release goes live, so
+        # without (a) we get "Cannot upload asset … to an immutable
+        # release"; without (b) we cannot recycle a fixed `latest` tag.
+        #
+        # Resolution: use a *dynamic* tag per push (the version string
+        # already carries the date + short SHA, so it's unique), stage
+        # all assets into a draft, then lift the draft to a published
+        # `--latest --prerelease` release. Older releases stay in the
+        # history (which is what Immutable Releases is designed for); the
+        # download URL `/releases/latest/download/<asset>` still resolves
+        # because `--latest` updates the redirect target.
+        uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda  # v3.0.0
+        with:
+          tag_name: release-${{ needs.build-aot.outputs.version }}
+          name: "Rolling release — ${{ needs.build-aot.outputs.version }}"
+          body_path: release-notes.md
+          files: |
+            dist/Linerule-aot-win-x64.zip
+            dist/sha256sums.txt
+          prerelease: true
+          draft: true
+          target_commitish: ${{ github.sha }}
+
+      - name: Publish draft as latest pre-release
+        # `gh release edit` mutates a draft in place so the assets stay
+        # attached. `--latest` updates the `/releases/latest/...` redirect
+        # target to this new release; `--prerelease` keeps the badge.
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: release-${{ needs.build-aot.outputs.version }}
+        run: |
+          gh release edit "$TAG" --draft=false --latest --prerelease
