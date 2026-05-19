@@ -150,4 +150,42 @@ public sealed class HudFadeKernelTests
         Assert.Equal(1f, HudFadeKernel.ComputeOpacity(hiddenHorizontal, new Point<Logical>(150, 115), Bounds, 50f));
         Assert.Equal(1f, HudFadeKernel.ComputeOpacity(hiddenOff, new Point<Logical>(150, 115), Bounds, 50f));
     }
+
+    [Fact]
+    public void OpacityCurveSitsAbovePureLinearMid()
+    {
+        // ADR-0016: ComputeOpacity composes 1−exp(−d/τ) with PerceptualOpacity.Smooth,
+        // so the perceived ramp must bow ABOVE the raw exponential at mid-range —
+        // that's the entire reason the curve exists. d = τ → linear ramp = 1−1/e ≈ 0.632.
+        // Smooth(0.632) ≈ pow(0.632, 1/2.2) ≈ 0.811. Anything below the linear value
+        // means the curve is missing or inverted.
+        var state = StateAt(Mode.Horizontal, visible: true, thickness: 10);
+        const float fadeDecayPx = 50f;
+        // Slit covers y=[195,205] when cursor y=200; HUD bottom=130 → gap = 65.
+        // 65 / 50 ≈ 1.3 → linear ramp ≈ 1 − exp(−1.3) ≈ 0.728. Smooth(0.728) ≈ 0.866.
+        var op = HudFadeKernel.ComputeOpacity(state, new Point<Logical>(150, 200), Bounds, fadeDecayPx);
+        Assert.True(
+            op > 0.728f,
+            string.Create(
+                CultureInfo.InvariantCulture,
+                $"perceptual opacity {op} must exceed the raw linear ramp 0.728"
+            )
+        );
+        Assert.InRange(op, 0.85f, 0.88f);
+    }
+
+    [Fact]
+    public void OpacityCurveStillPinsExactZeroAndExactOne()
+    {
+        // PerceptualOpacity.Smooth(0)==0 and Smooth(1)==1 — confirm the
+        // composition with the exponential doesn't introduce floating-point
+        // slop at the endpoints (a regression here would surface as a HUD
+        // that never quite vanishes or never quite reaches full opacity).
+        var state = StateAt(Mode.Horizontal, visible: true, thickness: 200);
+        var atOverlap = HudFadeKernel.ComputeOpacity(state, new Point<Logical>(150, 115), Bounds, 50f);
+        Assert.Equal(0f, atOverlap);
+
+        var atInfinity = HudFadeKernel.ComputeOpacity(state, new Point<Logical>(0, 100_000_000), Bounds, 50f);
+        Assert.Equal(1f, atInfinity);
+    }
 }

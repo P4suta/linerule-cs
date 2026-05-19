@@ -60,7 +60,7 @@ public static class Render
             (uint)Math.Max(0, monitor.Bottom - slitBottom)
         );
 
-        var maskFill = config.MaskColor.WithAlpha(config.Opacity.Value);
+        var maskFill = config.MaskColor.WithAlpha(config.Opacity.ToPerceptualByte());
         return new OverlayFrame([
             Layer.SolidRect(topDim, maskFill),
             Layer.SolidRect(bottomDim, maskFill),
@@ -86,7 +86,7 @@ public static class Render
             monitor.Height
         );
 
-        var maskFill = config.MaskColor.WithAlpha(config.Opacity.Value);
+        var maskFill = config.MaskColor.WithAlpha(config.Opacity.ToPerceptualByte());
         return new OverlayFrame([
             Layer.SolidRect(leftDim, maskFill),
             Layer.SolidRect(rightDim, maskFill),
@@ -95,14 +95,16 @@ public static class Render
     }
 
     /// <summary>
-    /// Top-right corner mode indicator. Soft white at 50% alpha so it reads on
-    /// both the dimmed region and any desktop content under the slit.
-    /// Horizontal mode = horizontal bar; Vertical mode = vertical bar — shape
-    /// echoes the slit orientation for at-a-glance recognition.
+    /// Top-right corner mode indicator. Soft white seeded at <c>0x80</c> raw
+    /// and reshaped through <see cref="PerceptualOpacity.Lstar"/> so the
+    /// glyph reads at a perceptual half-step on both the dimmed mask and
+    /// uncovered desktop content. Horizontal mode = horizontal bar; Vertical
+    /// mode = vertical bar — shape echoes the slit orientation for
+    /// at-a-glance recognition.
     /// </summary>
     private static Layer BuildIndicator(Mode mode, ScreenRect<Logical> monitor)
     {
-        var color = new Rgba(0xFF, 0xFF, 0xFF, 0x80);
+        var color = new Rgba(0xFF, 0xFF, 0xFF, Opacity.IndicatorDefault.ToPerceptualByte());
         var rect = mode switch
         {
             Mode.Horizontal => new ScreenRect<Logical>(
