@@ -29,7 +29,7 @@ Pre-built **rolling `latest`** AOT GUI build for Windows x64 (~8 MB, refreshed a
 - [`Linerule-aot-win-x64.zip`](https://github.com/P4suta/linerule-cs/releases/latest/download/Linerule-aot-win-x64.zip) — the GUI launcher `Linerule.exe` (capital L). Unzip anywhere and double-click.
 - [`sha256sums.txt`](https://github.com/P4suta/linerule-cs/releases/latest/download/sha256sums.txt) — SHA-256 of the zip above.
 
-Binaries are not code-signed, so the first launch trips Windows SmartScreen. Choose **More info → Run anyway**. The release page itself lives at [github.com/P4suta/linerule-cs/releases/tag/latest](https://github.com/P4suta/linerule-cs/releases/tag/latest); the auto-generated body lists the conventional-commit subjects merged since the previous rolling cut.
+Binaries are not code-signed, so the first launch trips Windows SmartScreen. Choose **More info → Run anyway**. The releases page lives at [github.com/P4suta/linerule-cs/releases](https://github.com/P4suta/linerule-cs/releases); each push to `main` adds a new `release-<version>` entry (kept as immutable history), and the `--latest` flag points the `/releases/latest/...` redirect at the freshest one. The auto-generated body lists the conventional-commit subjects merged since the previous rolling cut.
 
 For terminal use (`linerule.exe` CLI), build from source: `just publish` (see below).
 

@@ -120,28 +120,26 @@ jobs:
         env:
           OUTPUT: release-notes.md
 
-      - name: Drop previous `latest` release + tag
-        # softprops/action-gh-release upserts the release/tag pair, but
-        # leaves prior assets in place — we want the page to show exactly
-        # one zip + checksum, so delete the whole release (+ tag) before
-        # recreating it cleanly.
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh release delete latest --yes --cleanup-tag 2>/dev/null || true
-
       - name: Create draft release with assets
-        # GitHub's "Immutable releases" repo setting (now on by default for
-        # new repos) rejects asset uploads to an already-published release.
-        # softprops uploads each `files` entry as a separate API call after
-        # the release goes live, so anything past the first asset fails
-        # with "Cannot upload asset … to an immutable release."
-        # Workaround: stage everything in a draft, then lift to published
-        # + latest in the next step.
+        # GitHub's "Immutable releases" repo setting (default on for new
+        # repos) (a) rejects asset uploads to an already-published release
+        # and (b) reserves any tag a published release has used, even
+        # after the release is deleted. softprops uploads each `files`
+        # entry as a separate API call after the release goes live, so
+        # without (a) we get "Cannot upload asset … to an immutable
+        # release"; without (b) we cannot recycle a fixed `latest` tag.
+        #
+        # Resolution: use a *dynamic* tag per push (the version string
+        # already carries the date + short SHA, so it's unique), stage
+        # all assets into a draft, then lift the draft to a published
+        # `--latest --prerelease` release. Older releases stay in the
+        # history (which is what Immutable Releases is designed for); the
+        # download URL `/releases/latest/download/<asset>` still resolves
+        # because `--latest` updates the redirect target.
         uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda  # v3.0.0
         with:
-          tag_name: latest
-          name: "Rolling latest — ${{ needs.build-aot.outputs.version }}"
+          tag_name: release-${{ needs.build-aot.outputs.version }}
+          name: "Rolling release — ${{ needs.build-aot.outputs.version }}"
           body_path: release-notes.md
           files: |
             dist/Linerule-aot-win-x64.zip
@@ -151,11 +149,11 @@ jobs:
           target_commitish: ${{ github.sha }}
 
       - name: Publish draft as latest pre-release
-        # `gh release edit` mutates a draft in place, so the assets uploaded
-        # above stay attached. `--latest` is what powers the
-        # `/releases/latest/download/<asset>` redirect; `--prerelease` keeps
-        # the page's pre-release badge.
+        # `gh release edit` mutates a draft in place so the assets stay
+        # attached. `--latest` updates the `/releases/latest/...` redirect
+        # target to this new release; `--prerelease` keeps the badge.
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: release-${{ needs.build-aot.outputs.version }}
         run: |
-          gh release edit latest --draft=false --latest --prerelease
+          gh release edit "$TAG" --draft=false --latest --prerelease
