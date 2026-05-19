@@ -97,7 +97,7 @@ internal sealed class CompositionRenderer(IDCompositionDesktopDevice device, IDC
         {
             if (surface is not null)
             {
-                Marshal.FinalReleaseComObject(surface);
+                ComLifetime.Release(surface);
             }
             _device.CreateSurface(
                 w,
@@ -163,12 +163,12 @@ internal sealed class CompositionRenderer(IDCompositionDesktopDevice device, IDC
             }
             finally
             {
-                Marshal.FinalReleaseComObject(brush);
+                ComLifetime.Release(brush);
             }
         }
         finally
         {
-            Marshal.ReleaseComObject(ctx);
+            ComLifetime.Release(ctx);
             surface.EndDraw();
         }
     }
@@ -223,9 +223,9 @@ internal sealed class CompositionRenderer(IDCompositionDesktopDevice device, IDC
     {
         if (pooled.Surface is not null)
         {
-            Marshal.FinalReleaseComObject(pooled.Surface);
+            ComLifetime.Release(pooled.Surface);
         }
-        Marshal.FinalReleaseComObject(pooled.Visual);
+        ComLifetime.Release(pooled.Visual);
     }
 
     public void Dispose()

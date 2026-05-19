@@ -8,10 +8,8 @@ using Windows.Win32;
 using Windows.Win32.Foundation;
 using Windows.Win32.Graphics.Direct2D;
 using Windows.Win32.Graphics.Direct2D.Common;
-using Windows.Win32.Graphics.Direct3D11;
 using Windows.Win32.Graphics.DirectComposition;
 using Windows.Win32.Graphics.DirectWrite;
-using Windows.Win32.Graphics.Dxgi;
 using Windows.Win32.Graphics.Dxgi.Common;
 
 namespace Linerule.Platform.Windows.Hud;
@@ -93,7 +91,6 @@ internal sealed partial class HudRenderer : IDisposable
     );
 
     private readonly HudLayout _layout;
-    private readonly ID2D1Device _d2dDevice;
     private readonly IDWriteFactory _dwriteFactory;
     private readonly IDWriteTextFormat _titleFormat;
     private readonly IDWriteTextFormat _statusFormat;
@@ -103,16 +100,15 @@ internal sealed partial class HudRenderer : IDisposable
 
     public IDCompositionSurface Surface { get; }
 
-    public HudRenderer(
-        IDCompositionDesktopDevice device,
-        ID3D11Device d3dDevice,
-        HudLayout layout,
-        HudConfig hudCfg,
-        LoggerHandle log
-    )
+    public HudRenderer(IDCompositionDesktopDevice device, HudLayout layout, HudConfig hudCfg, LoggerHandle log)
     {
+        // The D2D device that minted `device` (the dcomp device) is owned by
+        // WindowsApp — we don't accept it here because we never use it
+        // directly. BeginDraw on the surfaces below pulls a fresh
+        // ID2D1DeviceContext out of the dcomp device per frame; that works
+        // iff the dcomp device was created with an ID2D1Device as its
+        // rendering device (see D3D11Devices.CreateD2DDevice / ADR-0009).
         ArgumentNullException.ThrowIfNull(device);
-        ArgumentNullException.ThrowIfNull(d3dDevice);
         ArgumentNullException.ThrowIfNull(hudCfg);
         _log = log;
         _layout = layout;
@@ -124,7 +120,6 @@ internal sealed partial class HudRenderer : IDisposable
         _hint = ToColorF(hudCfg.Colors.Hint);
         _divider = ToColorF(hudCfg.Colors.Divider);
 
-        _d2dDevice = CreateD2DDevice(d3dDevice);
         Surface = CreateDcompSurface(device, layout);
         _dwriteFactory = CreateDWriteFactory();
         (_titleFormat, _statusFormat, _bodyFormat, _telemetryFormat) = CreateTextFormats(
@@ -149,28 +144,6 @@ internal sealed partial class HudRenderer : IDisposable
             b = c.B / 255f,
             a = c.A / 255f,
         };
-
-    [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage(
-        "Trimming",
-        "IL2050:Correctness of COM interop cannot be guaranteed after trimming.",
-        Justification = "ADR-0010: Platform.Windows is IsAotCompatible=false by design; D3D11/D2D/DWrite is the COM-boundary contract."
-    )]
-    private static unsafe ID2D1Device CreateD2DDevice(ID3D11Device d3dDevice)
-    {
-        var dxgiDevice = (IDXGIDevice)d3dDevice;
-        var factoryIid = typeof(ID2D1Factory1).GUID;
-        PInvoke
-            .D2D1CreateFactory(
-                factoryType: D2D1_FACTORY_TYPE.D2D1_FACTORY_TYPE_SINGLE_THREADED,
-                riid: &factoryIid,
-                pFactoryOptions: null,
-                ppIFactory: out var factoryObj
-            )
-            .ThrowOnFailure();
-        var d2dFactory = (ID2D1Factory1)factoryObj;
-        d2dFactory.CreateDevice(dxgiDevice, out var d2dDevice);
-        return d2dDevice;
-    }
 
     /// <summary>
     /// Mint the dcomp surface the HUD draws into. The size matches the HUD
@@ -272,7 +245,7 @@ internal sealed partial class HudRenderer : IDisposable
         }
         finally
         {
-            Marshal.ReleaseComObject(ctx);
+            ComLifetime.Release(ctx);
             Surface.EndDraw();
         }
     }
@@ -302,12 +275,12 @@ internal sealed partial class HudRenderer : IDisposable
         }
         finally
         {
-            Marshal.ReleaseComObject(hintBrush);
-            Marshal.ReleaseComObject(divBrush);
-            Marshal.ReleaseComObject(accBrush);
-            Marshal.ReleaseComObject(subBrush);
-            Marshal.ReleaseComObject(fgBrush);
-            Marshal.ReleaseComObject(bgBrush);
+            ComLifetime.Release(hintBrush);
+            ComLifetime.Release(divBrush);
+            ComLifetime.Release(accBrush);
+            ComLifetime.Release(subBrush);
+            ComLifetime.Release(fgBrush);
+            ComLifetime.Release(bgBrush);
         }
     }
 
@@ -486,7 +459,7 @@ internal sealed partial class HudRenderer : IDisposable
         }
         finally
         {
-            Marshal.ReleaseComObject(layout);
+            ComLifetime.Release(layout);
         }
     }
 
@@ -519,7 +492,7 @@ internal sealed partial class HudRenderer : IDisposable
         }
         finally
         {
-            Marshal.ReleaseComObject(layout);
+            ComLifetime.Release(layout);
         }
     }
 
@@ -553,13 +526,14 @@ internal sealed partial class HudRenderer : IDisposable
             return;
         }
         _disposed = true;
-        Marshal.ReleaseComObject(_titleFormat);
-        Marshal.ReleaseComObject(_statusFormat);
-        Marshal.ReleaseComObject(_bodyFormat);
-        Marshal.ReleaseComObject(_telemetryFormat);
-        Marshal.ReleaseComObject(_dwriteFactory);
-        Marshal.FinalReleaseComObject(Surface);
-        Marshal.ReleaseComObject(_d2dDevice);
-        // _d3dDevice is owned by WindowsApp (shared with OverlayWindow); not released here.
+        ComLifetime.Release(_titleFormat);
+        ComLifetime.Release(_statusFormat);
+        ComLifetime.Release(_bodyFormat);
+        ComLifetime.Release(_telemetryFormat);
+        ComLifetime.Release(_dwriteFactory);
+        ComLifetime.Release(Surface);
+        // The ID2D1Device that rooted the dcomp device is owned by WindowsApp
+        // (shared with the dcomp device + CompositionRenderer); not released
+        // here. ID3D11Device likewise.
     }
 }

@@ -1,13 +1,28 @@
 # ADR-0009: Transparency + click-through via WS_EX_LAYERED + WS_EX_NOREDIRECTIONBITMAP + DirectComposition
 
 **Status**: Accepted (v4 — dcomp-direct, supersedes v3's `Windows.UI.Composition.Compositor` route)
-**Date**: 2026-05-11 (amended 2026-05-12)
+**Date**: 2026-05-11 (amended 2026-05-12; amended 2026-05-19 — `DCompositionCreateDevice2` rendering device must be `ID2D1Device`, not `ID3D11Device`, for `IDCompositionSurface::BeginDraw(IID_ID2D1DeviceContext)` to be legal — bug caught by first hardware test of the v4 path)
 
 > **2026-05-12 amendment (ADR-0010 Phase 2)**: the composition pipeline below
 > the HWND ex-style stack is now **`dcomp.dll` direct** —
-> `DCompositionCreateDevice2(d3dDevice, IID_IDCompositionDesktopDevice, out)`
+> `DCompositionCreateDevice2(d2dDevice, IID_IDCompositionDesktopDevice, out)`
 > + `device.CreateTargetForHwnd` + `IDCompositionVisual2` /
 > `IDCompositionSurface`, all source-gen'd through `Microsoft.Windows.CsWin32`.
+> The `d2dDevice` is itself minted via
+> `D3D11CreateDevice(BGRA_SUPPORT) → IDXGIDevice → ID2D1Factory1.CreateDevice`
+> (see `D3D11Devices.cs` — both `CreateBgra` and `CreateD2DDevice` live there).
+> **The choice of rendering device matters at runtime**: per the
+> `IDCompositionSurface::BeginDraw` API contract, the IID requested via
+> `BeginDraw(iid, …)` must match the type family of `renderingDevice` — a
+> D3D11-rooted dcomp device can only return DXGI surfaces; only a D2D-rooted
+> dcomp device can return `ID2D1DeviceContext` via
+> `BeginDraw(IID_ID2D1DeviceContext, …)`. The original v4 draft passed
+> `d3dDevice` directly and shipped that way; the resulting `E_NOINTERFACE`
+> manifested as a per-frame `InvalidCastException` swallowed by
+> `HudRenderer.Draw`'s try/catch (HUD silently never repainted). Phase 2's
+> CI gate caught the build but not the runtime — first hardware run
+> exposed it on 2026-05-19, and the rendering-device argument was flipped
+> to `d2dDevice` then.
 > The `Windows.UI.Composition.Compositor` route (v3) had a hard dependency
 > on the WinAppSDK + CsWinRT projection layer, which prevented `<PublishAot>`
 > from succeeding (`MarshalInspectable<T>.FromAbi(ptr)` is not fully

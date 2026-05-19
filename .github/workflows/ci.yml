@@ -12,6 +12,12 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Manual trigger so ADR-0010 AOT artifacts (Cli + App, win-x64) can be
+  # pulled to dev machines without opening a PR. Linux dev hosts cannot
+  # cross-publish NativeAOT to win-x64 ("Cross-OS native compilation is
+  # not supported" from Microsoft.NETCore.Native.Publish.targets), so the
+  # windows-latest runner is the only path that produces a runnable .exe.
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -124,6 +130,12 @@ jobs:
           global-json-file: global.json
       - run: dotnet publish src/Linerule.Cli -c Release -r win-x64 /p:PublishAot=true -o artifacts/aot
 
+      - name: Upload AOT binary artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: aot-cli-win-x64
+          path: artifacts/aot/
+
   aot-app:
     # GUI launcher (WinExe). Same constraints as aot-cli — required, win-x64.
     name: aot publish (app, windows-latest)
@@ -135,6 +147,12 @@ jobs:
         with:
           global-json-file: global.json
       - run: dotnet publish src/Linerule.App -c Release -r win-x64 /p:PublishAot=true -o artifacts/aot-dist
+
+      - name: Upload AOT binary artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: aot-app-win-x64
+          path: artifacts/aot-dist/
 
   aot-xtask:
     # XTask is the one Exe in the repo with no AOT blockers (no Tomlyn, no

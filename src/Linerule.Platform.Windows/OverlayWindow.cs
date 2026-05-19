@@ -9,7 +9,7 @@ using Linerule.Platform.Windows.Diagnostics;
 using Linerule.Platform.Windows.Win32;
 using Windows.Win32;
 using Windows.Win32.Foundation;
-using Windows.Win32.Graphics.Direct3D11;
+using Windows.Win32.Graphics.Direct2D;
 using Windows.Win32.Graphics.DirectComposition;
 using Windows.Win32.Graphics.Dxgi.Common;
 using Windows.Win32.UI.WindowsAndMessaging;
@@ -49,7 +49,7 @@ public sealed class OverlayWindow : IOverlaySurface
 {
     private const string ClassName = "linerule-cs-overlay";
 
-    private static WNDPROC? _wndProcKeepAlive;
+    private static bool _classRegistered;
 
     /// <summary>
     /// WndProc log handle, assigned on the first <see cref="Create"/> call.
@@ -115,9 +115,9 @@ public sealed class OverlayWindow : IOverlaySurface
         MonitorBounds = monitor;
     }
 
-    internal static OverlayWindow Create(ScreenRect<Logical> monitor, ID3D11Device d3dDevice, LoggerRoot logger)
+    internal static OverlayWindow Create(ScreenRect<Logical> monitor, ID2D1Device d2dDevice, LoggerRoot logger)
     {
-        ArgumentNullException.ThrowIfNull(d3dDevice);
+        ArgumentNullException.ThrowIfNull(d2dDevice);
         ArgumentNullException.ThrowIfNull(logger);
 
         var log = logger.For(Subsystems.OverlayWindow);
@@ -137,7 +137,7 @@ public sealed class OverlayWindow : IOverlaySurface
         log.Info("CreateWindowExW ok", new LogField("hwnd", HexHwnd(hwnd)));
         ExStyleSnapshot.Capture(hwnd, "after CreateWindowExW", log);
 
-        var (device, target, root, backgroundLayer, foregroundLayer, renderer) = AttachDcomp(hwnd, d3dDevice, compLog);
+        var (device, target, root, backgroundLayer, foregroundLayer, renderer) = AttachDcomp(hwnd, d2dDevice, compLog);
         ExStyleSnapshot.Capture(hwnd, "after dcomp attach", log);
 
         // ShowWindow's BOOL return is the previous show state, not a success
@@ -209,13 +209,17 @@ public sealed class OverlayWindow : IOverlaySurface
         IDCompositionVisual2 BackgroundLayer,
         IDCompositionVisual2 ForegroundLayer,
         CompositionRenderer Renderer
-    ) AttachDcomp(HWND hwnd, ID3D11Device d3dDevice, LoggerHandle compLog)
+    ) AttachDcomp(HWND hwnd, ID2D1Device d2dDevice, LoggerHandle compLog)
     {
-        // 1. dcomp device, with the existing D3D11 device as the rendering
-        //    device. Request IDCompositionDesktopDevice directly so we get
-        //    CreateTargetForHwnd without a second QI.
+        // 1. dcomp device, with the existing D2D device as the rendering
+        //    device. Per the IDCompositionSurface::BeginDraw spec, only a D2D-
+        //    rooted dcomp device legally returns ID2D1DeviceContext from
+        //    BeginDraw(IID_ID2D1DeviceContext); the earlier D3D11-rooted form
+        //    silently failed QI for that IID every frame (caught 2026-05-19
+        //    on first hardware test). Request IDCompositionDesktopDevice
+        //    directly so we get CreateTargetForHwnd without a second QI.
         var desktopIid = typeof(IDCompositionDesktopDevice).GUID;
-        PInvoke.DCompositionCreateDevice2(d3dDevice, in desktopIid, out var deviceObj).ThrowOnFailure();
+        PInvoke.DCompositionCreateDevice2(d2dDevice, in desktopIid, out var deviceObj).ThrowOnFailure();
         var device = (IDCompositionDesktopDevice)deviceObj!;
         compLog.Info("IDCompositionDesktopDevice created");
 
@@ -266,11 +270,11 @@ public sealed class OverlayWindow : IOverlaySurface
         // dcomp objects are COM RCWs — release in reverse order. Renderer
         // owns its per-layer surfaces; release before the device that minted them.
         _renderer.Dispose();
-        Marshal.FinalReleaseComObject(_foregroundLayer);
-        Marshal.FinalReleaseComObject(_backgroundLayer);
-        Marshal.FinalReleaseComObject(_root);
-        Marshal.FinalReleaseComObject(_target);
-        Marshal.FinalReleaseComObject(Device);
+        ComLifetime.Release(_foregroundLayer);
+        ComLifetime.Release(_backgroundLayer);
+        ComLifetime.Release(_root);
+        ComLifetime.Release(_target);
+        ComLifetime.Release(Device);
         Win32Guard.Check(PInvoke.DestroyWindow(_hwnd), "DestroyWindow overlay", _log);
         _disposed = true;
         _log.Info("dispose ok");
@@ -302,12 +306,10 @@ public sealed class OverlayWindow : IOverlaySurface
 
     private static unsafe void EnsureWindowClassRegistered(LoggerHandle log)
     {
-        if (_wndProcKeepAlive is not null)
+        if (_classRegistered)
         {
             return;
         }
-
-        _wndProcKeepAlive = OverlayWndProc;
 
         // hbrBackground left default (zero-init): with WS_EX_NOREDIRECTIONBITMAP
         // there's no GDI surface to paint anyway.
@@ -315,15 +317,17 @@ public sealed class OverlayWindow : IOverlaySurface
         {
             var wc = new WNDCLASSEXW
             {
-                cbSize = (uint)Marshal.SizeOf<WNDCLASSEXW>(),
+                cbSize = (uint)sizeof(WNDCLASSEXW),
                 style = default,
-                lpfnWndProc = _wndProcKeepAlive,
+                lpfnWndProc = &OverlayWndProc,
                 hInstance = PInvoke.GetModuleHandle(default(PCWSTR)),
                 lpszClassName = className,
             };
 
             Win32Guard.CheckOrThrow(PInvoke.RegisterClassEx(in wc) != 0, "RegisterClassExW overlay", log);
         }
+
+        _classRegistered = true;
     }
 
     private const uint WM_NCHITTEST = 0x0084;
@@ -356,6 +360,7 @@ public sealed class OverlayWindow : IOverlaySurface
     ///   <item><c>WM_DESTROY → PostQuitMessage(0)</c> (clean shutdown of the message loop)</item>
     /// </list>
     /// </summary>
+    [UnmanagedCallersOnly(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvStdcall)])]
     private static LRESULT OverlayWndProc(HWND hwnd, uint msg, WPARAM wParam, LPARAM lParam)
     {
         var log = _wndProcLog;
