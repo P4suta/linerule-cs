@@ -190,7 +190,7 @@ public sealed class HotkeyHost : IHotkeyHost
         {
             var wc = new WNDCLASSEXW
             {
-                cbSize = (uint)Marshal.SizeOf<WNDCLASSEXW>(),
+                cbSize = (uint)sizeof(WNDCLASSEXW),
                 style = default,
                 lpfnWndProc = &HotkeyWndProc,
                 hInstance = PInvoke.GetModuleHandle(default(PCWSTR)),

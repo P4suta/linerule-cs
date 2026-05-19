@@ -245,7 +245,7 @@ internal sealed partial class HudRenderer : IDisposable
         }
         finally
         {
-            Marshal.ReleaseComObject(ctx);
+            ComLifetime.Release(ctx);
             Surface.EndDraw();
         }
     }
@@ -275,12 +275,12 @@ internal sealed partial class HudRenderer : IDisposable
         }
         finally
         {
-            Marshal.ReleaseComObject(hintBrush);
-            Marshal.ReleaseComObject(divBrush);
-            Marshal.ReleaseComObject(accBrush);
-            Marshal.ReleaseComObject(subBrush);
-            Marshal.ReleaseComObject(fgBrush);
-            Marshal.ReleaseComObject(bgBrush);
+            ComLifetime.Release(hintBrush);
+            ComLifetime.Release(divBrush);
+            ComLifetime.Release(accBrush);
+            ComLifetime.Release(subBrush);
+            ComLifetime.Release(fgBrush);
+            ComLifetime.Release(bgBrush);
         }
     }
 
@@ -459,7 +459,7 @@ internal sealed partial class HudRenderer : IDisposable
         }
         finally
         {
-            Marshal.ReleaseComObject(layout);
+            ComLifetime.Release(layout);
         }
     }
 
@@ -492,7 +492,7 @@ internal sealed partial class HudRenderer : IDisposable
         }
         finally
         {
-            Marshal.ReleaseComObject(layout);
+            ComLifetime.Release(layout);
         }
     }
 
@@ -526,12 +526,12 @@ internal sealed partial class HudRenderer : IDisposable
             return;
         }
         _disposed = true;
-        Marshal.ReleaseComObject(_titleFormat);
-        Marshal.ReleaseComObject(_statusFormat);
-        Marshal.ReleaseComObject(_bodyFormat);
-        Marshal.ReleaseComObject(_telemetryFormat);
-        Marshal.ReleaseComObject(_dwriteFactory);
-        Marshal.FinalReleaseComObject(Surface);
+        ComLifetime.Release(_titleFormat);
+        ComLifetime.Release(_statusFormat);
+        ComLifetime.Release(_bodyFormat);
+        ComLifetime.Release(_telemetryFormat);
+        ComLifetime.Release(_dwriteFactory);
+        ComLifetime.Release(Surface);
         // The ID2D1Device that rooted the dcomp device is owned by WindowsApp
         // (shared with the dcomp device + CompositionRenderer); not released
         // here. ID3D11Device likewise.

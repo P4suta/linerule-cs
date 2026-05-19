@@ -124,8 +124,8 @@ public static partial class WindowsApp
 
         OverlayWndProcDispatch.OnAppTick = null;
         await ShutdownAsync(loop, hotkeys, overlay, log).ConfigureAwait(false);
-        Marshal.FinalReleaseComObject(d2dDevice);
-        Marshal.FinalReleaseComObject(d3dDevice);
+        ComLifetime.Release(d2dDevice);
+        ComLifetime.Release(d3dDevice);
         return 0;
     }
 

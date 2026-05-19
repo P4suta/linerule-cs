@@ -159,8 +159,8 @@ internal sealed partial class HudVisual : IDisposable
                 new LogField("msg", ex.Message)
             );
         }
-        Marshal.FinalReleaseComObject(_effect);
-        Marshal.FinalReleaseComObject(_visual);
+        ComLifetime.Release(_effect);
+        ComLifetime.Release(_visual);
         _renderer.Dispose();
     }
 }

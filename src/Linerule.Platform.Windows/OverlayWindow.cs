@@ -270,11 +270,11 @@ public sealed class OverlayWindow : IOverlaySurface
         // dcomp objects are COM RCWs — release in reverse order. Renderer
         // owns its per-layer surfaces; release before the device that minted them.
         _renderer.Dispose();
-        Marshal.FinalReleaseComObject(_foregroundLayer);
-        Marshal.FinalReleaseComObject(_backgroundLayer);
-        Marshal.FinalReleaseComObject(_root);
-        Marshal.FinalReleaseComObject(_target);
-        Marshal.FinalReleaseComObject(Device);
+        ComLifetime.Release(_foregroundLayer);
+        ComLifetime.Release(_backgroundLayer);
+        ComLifetime.Release(_root);
+        ComLifetime.Release(_target);
+        ComLifetime.Release(Device);
         Win32Guard.Check(PInvoke.DestroyWindow(_hwnd), "DestroyWindow overlay", _log);
         _disposed = true;
         _log.Info("dispose ok");
@@ -317,7 +317,7 @@ public sealed class OverlayWindow : IOverlaySurface
         {
             var wc = new WNDCLASSEXW
             {
-                cbSize = (uint)Marshal.SizeOf<WNDCLASSEXW>(),
+                cbSize = (uint)sizeof(WNDCLASSEXW),
                 style = default,
                 lpfnWndProc = &OverlayWndProc,
                 hInstance = PInvoke.GetModuleHandle(default(PCWSTR)),
