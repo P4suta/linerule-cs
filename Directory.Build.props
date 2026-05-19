@@ -57,8 +57,8 @@
          making `actions/setup-dotnet`'s cache hit at the dependency-graph
          level rather than the timestamp level. Required for the CI cache
          key (cache-dependency-path: '**/packages.lock.json') to be stable
-         across runs. CI uses `restore --locked-mode` so any drift between
-         lockfile and central package versions fails the build. -->
+         across runs. CI restores with the locked mode flag so any drift
+         between lockfile and central package versions fails the build. -->
     <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
   </PropertyGroup>
 
