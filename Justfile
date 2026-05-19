@@ -52,6 +52,13 @@ dev-down:
 restore:
     {{dotnet}} restore --nologo -v {{dotnet_v}}
 
+# Regenerate every project's NuGet packages.lock.json from current
+# Directory.Packages.props. Run after bumping a dependency by hand or
+# resolving Dependabot drift; CI restores with --locked-mode so the
+# committed lockfile is the source of truth.
+lock:
+    {{dotnet}} restore --use-lock-file --force-evaluate --nologo -v {{dotnet_v}}
+
 build *config="Debug":
     {{dotnet}} build -c {{config}} {{dotnet_flags}}
 

@@ -51,6 +51,20 @@
     <ContinuousIntegrationBuild Condition="'$(CI)' == 'true'">true</ContinuousIntegrationBuild>
 
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
+
+    <!-- NuGet lock file mode — `dotnet restore` writes a per-project
+         packages.lock.json that records the fully-resolved transitive graph,
+         making `actions/setup-dotnet`'s cache hit at the dependency-graph
+         level rather than the timestamp level. Required for the CI cache
+         key (cache-dependency-path: '**/packages.lock.json') to be stable
+         across runs. Note: CI does NOT run with the strict locked-mode flag
+         because GitHub-hosted runner SDK patch versions drift vs the
+         container that generated the lockfile (Microsoft.NET.ILLink.Tasks
+         and other bundled framework packs land at slightly different
+         versions on different SDK patches; NU1004 trips strict mode). The
+         lockfile is allowed to update silently in CI; the cache key still
+         lives on its content so unchanged lockfiles still hit the cache. -->
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
   </PropertyGroup>
 
   <!-- Cross-build Windows-targeted projects on Linux. -->

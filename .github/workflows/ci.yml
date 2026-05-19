@@ -40,14 +40,18 @@ jobs:
         with:
           global-json-file: global.json
           cache: true
-          # Repo does not (yet) generate NuGet packages.lock.json. Key the
-          # cache on Central Package Management (single point of version
-          # truth) plus global.json (SDK pin) instead.
+          # Cache key tracks the per-project lockfiles + SDK pin so the
+          # cache only invalidates when an actual transitive dependency
+          # moves. setup-dotnet hashes every file in cache-dependency-path.
           cache-dependency-path: |
-            **/Directory.Packages.props
+            **/packages.lock.json
             global.json
 
-      - run: dotnet restore --locked-mode || dotnet restore
+      # No `--locked-mode`: GitHub-hosted runner SDK patch versions drift
+      # vs the container that generated the lockfile (NU1004 on bundled
+      # Microsoft.NET.ILLink.Tasks). The lockfile still drives the cache
+      # key, but NuGet is allowed to refresh it silently when SDKs differ.
+      - run: dotnet restore
       - run: dotnet build -c Release --no-restore --nologo
 
       - name: Test (with coverage)
@@ -96,6 +100,10 @@ jobs:
             **/Directory.Packages.props
             global.json
 
+      # No `--locked-mode`: GitHub-hosted runner SDK patch versions drift
+      # vs the container that generated the lockfile (NU1004 on bundled
+      # Microsoft.NET.ILLink.Tasks). The lockfile still drives the cache
+      # key, but NuGet is allowed to refresh it silently when SDKs differ.
       - run: dotnet restore
       - run: dotnet build -c Release --no-restore --nologo
       - run: dotnet test -c Release --no-build --nologo
@@ -245,6 +253,14 @@ jobs:
       - uses: actions/setup-dotnet@c2fa09f4bde5ebb9d1777cf28262a3eb3db3ced7  # v5.2.0
         with:
           global-json-file: global.json
+          cache: true
+          cache-dependency-path: |
+            **/packages.lock.json
+            global.json
+      # No `--locked-mode`: GitHub-hosted runner SDK patch versions drift
+      # vs the container that generated the lockfile (NU1004 on bundled
+      # Microsoft.NET.ILLink.Tasks). The lockfile still drives the cache
+      # key, but NuGet is allowed to refresh it silently when SDKs differ.
       - run: dotnet restore
       - name: dotnet list package --vulnerable
         run: |

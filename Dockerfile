@@ -18,7 +18,8 @@ ENV DEBIAN_FRONTEND=noninteractive \
     DOTNET_CLI_TELEMETRY_OPTOUT=1 \
     DOTNET_GENERATE_ASPNET_CERTIFICATE=0 \
     DOTNET_ENVIRONMENT=Development \
-    INSIDE_CONTAINER=1
+    INSIDE_CONTAINER=1 \
+    EnableWindowsTargeting=true
 
 # Node major is the current active LTS line — `@commitlint/cli` v21 (used by
 # the commit-msg hook via `npx --no -- commitlint`) requires Node >= 20.
