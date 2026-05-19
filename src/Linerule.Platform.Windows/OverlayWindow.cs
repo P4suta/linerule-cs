@@ -9,7 +9,7 @@ using Linerule.Platform.Windows.Diagnostics;
 using Linerule.Platform.Windows.Win32;
 using Windows.Win32;
 using Windows.Win32.Foundation;
-using Windows.Win32.Graphics.Direct3D11;
+using Windows.Win32.Graphics.Direct2D;
 using Windows.Win32.Graphics.DirectComposition;
 using Windows.Win32.Graphics.Dxgi.Common;
 using Windows.Win32.UI.WindowsAndMessaging;
@@ -115,9 +115,9 @@ public sealed class OverlayWindow : IOverlaySurface
         MonitorBounds = monitor;
     }
 
-    internal static OverlayWindow Create(ScreenRect<Logical> monitor, ID3D11Device d3dDevice, LoggerRoot logger)
+    internal static OverlayWindow Create(ScreenRect<Logical> monitor, ID2D1Device d2dDevice, LoggerRoot logger)
     {
-        ArgumentNullException.ThrowIfNull(d3dDevice);
+        ArgumentNullException.ThrowIfNull(d2dDevice);
         ArgumentNullException.ThrowIfNull(logger);
 
         var log = logger.For(Subsystems.OverlayWindow);
@@ -137,7 +137,7 @@ public sealed class OverlayWindow : IOverlaySurface
         log.Info("CreateWindowExW ok", new LogField("hwnd", HexHwnd(hwnd)));
         ExStyleSnapshot.Capture(hwnd, "after CreateWindowExW", log);
 
-        var (device, target, root, backgroundLayer, foregroundLayer, renderer) = AttachDcomp(hwnd, d3dDevice, compLog);
+        var (device, target, root, backgroundLayer, foregroundLayer, renderer) = AttachDcomp(hwnd, d2dDevice, compLog);
         ExStyleSnapshot.Capture(hwnd, "after dcomp attach", log);
 
         // ShowWindow's BOOL return is the previous show state, not a success
@@ -209,13 +209,17 @@ public sealed class OverlayWindow : IOverlaySurface
         IDCompositionVisual2 BackgroundLayer,
         IDCompositionVisual2 ForegroundLayer,
         CompositionRenderer Renderer
-    ) AttachDcomp(HWND hwnd, ID3D11Device d3dDevice, LoggerHandle compLog)
+    ) AttachDcomp(HWND hwnd, ID2D1Device d2dDevice, LoggerHandle compLog)
     {
-        // 1. dcomp device, with the existing D3D11 device as the rendering
-        //    device. Request IDCompositionDesktopDevice directly so we get
-        //    CreateTargetForHwnd without a second QI.
+        // 1. dcomp device, with the existing D2D device as the rendering
+        //    device. Per the IDCompositionSurface::BeginDraw spec, only a D2D-
+        //    rooted dcomp device legally returns ID2D1DeviceContext from
+        //    BeginDraw(IID_ID2D1DeviceContext); the earlier D3D11-rooted form
+        //    silently failed QI for that IID every frame (caught 2026-05-19
+        //    on first hardware test). Request IDCompositionDesktopDevice
+        //    directly so we get CreateTargetForHwnd without a second QI.
         var desktopIid = typeof(IDCompositionDesktopDevice).GUID;
-        PInvoke.DCompositionCreateDevice2(d3dDevice, in desktopIid, out var deviceObj).ThrowOnFailure();
+        PInvoke.DCompositionCreateDevice2(d2dDevice, in desktopIid, out var deviceObj).ThrowOnFailure();
         var device = (IDCompositionDesktopDevice)deviceObj!;
         compLog.Info("IDCompositionDesktopDevice created");
 

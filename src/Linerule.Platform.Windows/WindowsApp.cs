@@ -10,7 +10,7 @@ using Linerule.Platform.Windows.Diagnostics;
 using Linerule.Platform.Windows.Hud;
 using Linerule.Platform.Windows.Rendering;
 using Windows.Win32;
-using Windows.Win32.Graphics.Direct3D11;
+using Windows.Win32.Graphics.Direct2D;
 using Windows.Win32.UI.WindowsAndMessaging;
 
 namespace Linerule.Platform.Windows;
@@ -73,10 +73,16 @@ public static partial class WindowsApp
     {
         using var sessionScope = logger.PushSession(Guid.NewGuid());
         var d3dDevice = D3D11Devices.CreateBgra(log);
+        // D2D device wraps d3dDevice; it MUST be the rendering device handed
+        // to DCompositionCreateDevice2 inside OverlayWindow.AttachDcomp so
+        // IDCompositionSurface::BeginDraw(IID_ID2D1DeviceContext) is legal
+        // (the D3D11-rooted form returns E_NOINTERFACE → InvalidCastException
+        // on every frame). See ADR-0009 v4 amendment.
+        var d2dDevice = D3D11Devices.CreateD2DDevice(d3dDevice, log);
         var monitor = MonitorInfo.PrimaryBounds(logger.For(Subsystems.Win32));
         var timing = RenderTiming.Probe(log, config.Render.FallbackRefreshHz);
 
-        await using var overlay = OverlayWindow.Create(monitor, d3dDevice, logger);
+        await using var overlay = OverlayWindow.Create(monitor, d2dDevice, logger);
         await using var hotkeys = HotkeyHost.Create(logger.For(Subsystems.HotkeyHost));
         var cursor = new CursorTracker(logger.For(Subsystems.CursorTracker));
         RegisterAll(hotkeys, config.Hotkeys, config.Input.TapStep, logger.For(Subsystems.Hotkey));
@@ -90,7 +96,7 @@ public static partial class WindowsApp
             logger.For(Subsystems.Composition),
             config.Render.WarnRatio
         );
-        using var hud = CreateHud(overlay, d3dDevice, config.Hud, logger.For(Subsystems.Hud));
+        using var hud = CreateHud(overlay, config.Hud, logger.For(Subsystems.Hud));
         await using var loop = new TickLoop(
             overlay,
             hotkeys,
@@ -121,6 +127,9 @@ public static partial class WindowsApp
 
         OverlayWndProcDispatch.OnAppTick = null;
         await ShutdownAsync(loop, hotkeys, overlay, log).ConfigureAwait(false);
+        // Release in reverse construction order: D2D first (depends on D3D11
+        // via IDXGIDevice), D3D11 last.
+        Marshal.FinalReleaseComObject(d2dDevice);
         Marshal.FinalReleaseComObject(d3dDevice);
         return 0;
     }
@@ -255,19 +264,14 @@ public static partial class WindowsApp
     /// foreground layer at the top of its visual tree. Returns a disposable
     /// that owns the HUD's surface / brush / visual / D2D resources.
     /// </summary>
-    private static HudVisual CreateHud(
-        OverlayWindow overlay,
-        ID3D11Device d3dDevice,
-        HudConfig hudCfg,
-        LoggerHandle hudLog
-    )
+    private static HudVisual CreateHud(OverlayWindow overlay, HudConfig hudCfg, LoggerHandle hudLog)
     {
         ArgumentNullException.ThrowIfNull(hudCfg);
         var dpiScale = overlay.Dpi / 96f;
         var monitorWidthPx = (int)overlay.MonitorBounds.Width;
         var layout = HudLayout.ForMonitor(monitorWidthPx, monitorMarginRightPx: 0, dpiScale: dpiScale, hudCfg);
         var layer = overlay.CreateLayer();
-        return new HudVisual(overlay.Device, d3dDevice, layer, layout, hudCfg, hudLog);
+        return new HudVisual(overlay.Device, layer, layout, hudCfg, hudLog);
     }
 
     private static IEnumerable<(string Chord, OverlayAction Action)> BuildBindings(HotkeyMap map, TapStepConfig tap)

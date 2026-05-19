@@ -2,7 +2,6 @@ using System;
 using System.Runtime.InteropServices;
 using Linerule.Core;
 using Linerule.Platform.Windows.Diagnostics;
-using Windows.Win32.Graphics.Direct3D11;
 using Windows.Win32.Graphics.DirectComposition;
 
 namespace Linerule.Platform.Windows.Hud;
@@ -61,22 +60,24 @@ internal sealed partial class HudVisual : IDisposable
 
     public HudVisual(
         IDCompositionDesktopDevice device,
-        ID3D11Device d3dDevice,
         IDCompositionVisual2 parent,
         HudLayout layout,
         HudConfig hudCfg,
         LoggerHandle log
     )
     {
+        // GPU devices (ID3D11Device / ID2D1Device) are owned by WindowsApp and
+        // already wired through `device` — the dcomp device was minted with
+        // the D2D device as its rendering device, so BeginDraw pulls a fresh
+        // ID2D1DeviceContext per frame without an explicit handle here.
         ArgumentNullException.ThrowIfNull(device);
-        ArgumentNullException.ThrowIfNull(d3dDevice);
         ArgumentNullException.ThrowIfNull(parent);
         ArgumentNullException.ThrowIfNull(hudCfg);
         _log = log;
         _parent = parent;
         Layout = layout;
         _baseOpacity = hudCfg.BaseOpacity;
-        _renderer = new HudRenderer(device, d3dDevice, layout, hudCfg, log);
+        _renderer = new HudRenderer(device, layout, hudCfg, log);
 
         device.CreateVisual(out _visual);
         _visual.SetContent(_renderer.Surface);
