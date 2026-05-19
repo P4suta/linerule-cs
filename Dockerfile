@@ -1,20 +1,15 @@
 # linerule-cs dev container.
 #
-# Tooling versions are driven by `mise.toml` at the repo root — the host
-# installs from the same manifest, so container and host run identical
-# binaries. After `docker compose build`, every Justfile recipe can be
-# run via `docker compose run --rm dev <…>` without touching the host
-# toolchain.
+# Holds the .NET 10 SDK + every host-side tool used by `just <target>`. After
+# `docker compose build`, every Justfile command can be run from the host via
+# `docker compose run --rm dev <…>` without touching the host toolchain.
 #
 # Cross-platform build coverage:
-#   - Linerule.Core / Platform / Input / *.Tests target net10.0 — built
-#     and tested fully here.
-#   - Linerule.Platform.Windows / Cli / App target net10.0-windows —
-#     reference assemblies are platform-neutral so `dotnet build` is
-#     expected to succeed, but the produced binary only runs on Windows.
-#     AOT publish for win-x64 is unsupported from Linux ("Cross-OS native
-#     compilation is not supported" — Microsoft.NETCore.Native.Publish.targets);
-#     the CI windows-latest runner is the only path to a runnable .exe.
+#   - Linerule.Core / Config / Platform / *.Tests target net10.0 — built and
+#     tested fully in this container.
+#   - Linerule.Platform.Windows / Cli target net10.0-windows — reference
+#     assemblies are platform-neutral so `dotnet build` is expected to succeed
+#     here, but the produced binary only runs on Windows.
 
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS dev
 
@@ -25,16 +20,45 @@ ENV DEBIAN_FRONTEND=noninteractive \
     DOTNET_ENVIRONMENT=Development \
     INSIDE_CONTAINER=1
 
-# System deps: ca-certificates / curl / git / unzip / sudo are baseline
-# utilities; clang + zlib1g-dev are NativeAOT prerequisites (ILCompiler
-# shells out to clang for linking). Node and npm intentionally not
-# installed — bun (via mise) replaces them for commitlint.
+ARG TYPOS_VERSION=1.46.1
+ARG ACTIONLINT_VERSION=1.7.12
+ARG LEFTHOOK_VERSION=2.1.6
+ARG JUST_VERSION=1.51.0
+
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-        ca-certificates curl git unzip sudo \
-        clang zlib1g-dev \
+        ca-certificates \
+        curl \
+        git \
+        unzip \
+        sudo \
+        nodejs \
+        npm \
+        clang \
+        zlib1g-dev \
     && rm -rf /var/lib/apt/lists/*
 
+# typos
+RUN curl -fsSL "https://github.com/crate-ci/typos/releases/download/v${TYPOS_VERSION}/typos-v${TYPOS_VERSION}-x86_64-unknown-linux-musl.tar.gz" \
+        | tar -xz -C /usr/local/bin ./typos \
+    && chmod +x /usr/local/bin/typos
+
+# actionlint
+RUN curl -fsSL "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz" \
+        | tar -xz -C /usr/local/bin actionlint \
+    && chmod +x /usr/local/bin/actionlint
+
+# lefthook (v2 ships .deb/.apk/.rpm only — pick .deb on the Debian-based SDK image).
+RUN curl -fsSL "https://github.com/evilmartians/lefthook/releases/download/v${LEFTHOOK_VERSION}/lefthook_${LEFTHOOK_VERSION}_amd64.deb" -o /tmp/lefthook.deb \
+    && dpkg -i /tmp/lefthook.deb \
+    && rm /tmp/lefthook.deb
+
+# just (so the in-container shell can re-enter the same Justfile recipes)
+RUN curl -fsSL "https://github.com/casey/just/releases/download/${JUST_VERSION}/just-${JUST_VERSION}-x86_64-unknown-linux-musl.tar.gz" \
+        | tar -xz -C /usr/local/bin just \
+    && chmod +x /usr/local/bin/just
+
+# Cache friendly: /workspace is the bind-mount target.
 WORKDIR /workspace
 
 # A non-root dev user mirroring the host UID/GID is wired up from compose.yml
@@ -54,25 +78,5 @@ RUN if getent passwd ${USER_UID} >/dev/null; then \
 
 USER ${USERNAME}
 
-# Install mise (latest stable). The repo's mise.toml drives tool versions;
-# pre-installing at image-build time bakes the binaries into a layer so
-# `docker compose run --rm dev <…>` doesn't pay an install cost per run.
-RUN curl -fsSL https://mise.run | sh
-
-ENV PATH="/home/${USERNAME}/.local/bin:/home/${USERNAME}/.local/share/mise/shims:${PATH}" \
-    MISE_TRUSTED_CONFIG_PATHS=/workspace
-
-# Snapshot of mise.toml for build-time install. The runtime bind mount
-# (compose.yml: `.:/workspace`) shadows this with the live host manifest,
-# so an edit on the host is visible inside the container immediately —
-# but already-installed tools persist in the image layer below.
-COPY --chown=${USER_UID}:${USER_GID} mise.toml /workspace/mise.toml
-
-# Install every tool in mise.toml EXCEPT dotnet — the base image already
-# ships /usr/share/dotnet/dotnet and adding a second SDK via mise would
-# double the image size. `mise install <list>` skips dotnet, leaving the
-# base image's binary as the one mise's shim layer falls through to.
-RUN mise install actionlint lefthook typos bun just
-
-# Default: interactive bash; compose.yml overrides for one-shot recipes.
+# Default: run an interactive bash; compose.yml overrides for one-shot recipes.
 CMD ["bash"]

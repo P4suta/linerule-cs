@@ -13,4 +13,3 @@ actionlint = "latest"
 lefthook = "latest"
 typos = "latest"
 bun = "latest"   # commitlint package manager + runtime (replaces npm)
-just = "latest"  # task runner (host); container reuses the same pin
