@@ -34,6 +34,14 @@ packages/
 # In-workspace caches (compose.yml routes NUGET_PACKAGES / DOTNET_CLI_HOME / NPM_CONFIG_CACHE here).
 .cache/
 
+# Tooling-only npm package.json (hosts commitlint for the commit-msg hook
+# via `just hooks` → `docker compose run --rm dev npm install`). The
+# install lands at /workspace/node_modules through the bind mount, so the
+# directory and its derived lockfile surface in host `git status` —
+# ignore both.
+node_modules/
+package-lock.json
+
 # AOT / native
 *.pdb
 *.dbg
