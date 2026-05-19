@@ -87,7 +87,11 @@ jobs:
 
   build-test-windows:
     name: build + test (windows)
-    runs-on: windows-latest
+    # `windows-latest` is being redirected to `windows-2025-vs2026` by GitHub
+    # by 2026-06-15 (notice surfaces as an Annotations entry on every run).
+    # Pinning explicitly now silences the annotation; revert to
+    # `windows-latest` once the redirect completes and the alias is stable.
+    runs-on: windows-2025-vs2026
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
@@ -129,7 +133,9 @@ jobs:
     # retired Tomlyn / ADR-0015, Phase 2B retired WinAppSDK / ADR-0009 dcomp-
     # direct). win-x64 / windows-latest because Cli's TFM is net10.0-windows.
     name: aot publish (cli, windows-latest)
-    runs-on: windows-latest
+    # See note on `windows-2025-vs2026` in build-test-windows above —
+    # explicit pin until GitHub's 2026-06-15 redirect completes.
+    runs-on: windows-2025-vs2026
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
@@ -147,7 +153,9 @@ jobs:
   aot-app:
     # GUI launcher (WinExe). Same constraints as aot-cli — required, win-x64.
     name: aot publish (app, windows-latest)
-    runs-on: windows-latest
+    # See note on `windows-2025-vs2026` in build-test-windows above —
+    # explicit pin until GitHub's 2026-06-15 redirect completes.
+    runs-on: windows-2025-vs2026
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
