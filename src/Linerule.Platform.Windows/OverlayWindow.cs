@@ -49,7 +49,7 @@ public sealed class OverlayWindow : IOverlaySurface
 {
     private const string ClassName = "linerule-cs-overlay";
 
-    private static WNDPROC? _wndProcKeepAlive;
+    private static bool _classRegistered;
 
     /// <summary>
     /// WndProc log handle, assigned on the first <see cref="Create"/> call.
@@ -306,12 +306,10 @@ public sealed class OverlayWindow : IOverlaySurface
 
     private static unsafe void EnsureWindowClassRegistered(LoggerHandle log)
     {
-        if (_wndProcKeepAlive is not null)
+        if (_classRegistered)
         {
             return;
         }
-
-        _wndProcKeepAlive = OverlayWndProc;
 
         // hbrBackground left default (zero-init): with WS_EX_NOREDIRECTIONBITMAP
         // there's no GDI surface to paint anyway.
@@ -321,13 +319,15 @@ public sealed class OverlayWindow : IOverlaySurface
             {
                 cbSize = (uint)Marshal.SizeOf<WNDCLASSEXW>(),
                 style = default,
-                lpfnWndProc = _wndProcKeepAlive,
+                lpfnWndProc = &OverlayWndProc,
                 hInstance = PInvoke.GetModuleHandle(default(PCWSTR)),
                 lpszClassName = className,
             };
 
             Win32Guard.CheckOrThrow(PInvoke.RegisterClassEx(in wc) != 0, "RegisterClassExW overlay", log);
         }
+
+        _classRegistered = true;
     }
 
     private const uint WM_NCHITTEST = 0x0084;
@@ -360,6 +360,7 @@ public sealed class OverlayWindow : IOverlaySurface
     ///   <item><c>WM_DESTROY → PostQuitMessage(0)</c> (clean shutdown of the message loop)</item>
     /// </list>
     /// </summary>
+    [UnmanagedCallersOnly(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvStdcall)])]
     private static LRESULT OverlayWndProc(HWND hwnd, uint msg, WPARAM wParam, LPARAM lParam)
     {
         var log = _wndProcLog;

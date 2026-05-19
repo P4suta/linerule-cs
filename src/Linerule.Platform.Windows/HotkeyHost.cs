@@ -26,8 +26,6 @@ public sealed class HotkeyHost : IHotkeyHost
 {
     private const string ClassName = "linerule-cs-hotkey-host";
 
-    private static WNDPROC? _wndProcKeepAlive;
-
     // ConcurrentDictionary, not Dictionary: Create/Dispose may run on the
     // bootstrap async path while HotkeyWndProc dispatches on the Win32 UI
     // thread (the message-only window's pump). Even though the overlay is
@@ -179,14 +177,14 @@ public sealed class HotkeyHost : IHotkeyHost
         return ValueTask.CompletedTask;
     }
 
+    private static bool _classRegistered;
+
     private static unsafe void EnsureWindowClassRegistered(LoggerHandle log)
     {
-        if (_wndProcKeepAlive is not null)
+        if (_classRegistered)
         {
             return;
         }
-
-        _wndProcKeepAlive = HotkeyWndProc;
 
         fixed (char* className = ClassName)
         {
@@ -194,15 +192,18 @@ public sealed class HotkeyHost : IHotkeyHost
             {
                 cbSize = (uint)Marshal.SizeOf<WNDCLASSEXW>(),
                 style = default,
-                lpfnWndProc = _wndProcKeepAlive,
+                lpfnWndProc = &HotkeyWndProc,
                 hInstance = PInvoke.GetModuleHandle(default(PCWSTR)),
                 lpszClassName = className,
             };
 
             Win32Guard.CheckOrThrow(PInvoke.RegisterClassEx(in wc) != 0, "RegisterClassExW hotkey host", log);
         }
+
+        _classRegistered = true;
     }
 
+    [UnmanagedCallersOnly(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvStdcall)])]
     private static unsafe LRESULT HotkeyWndProc(HWND hwnd, uint msg, WPARAM wParam, LPARAM lParam)
     {
         if (msg == PInvoke.WM_HOTKEY && HostByHwnd.TryGetValue((nint)hwnd.Value, out var host))

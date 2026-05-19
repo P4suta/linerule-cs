@@ -1,5 +1,6 @@
 using System;
 using System.Globalization;
+using System.Runtime.InteropServices;
 using Linerule.Platform.Windows.Diagnostics;
 using Windows.Win32;
 using Windows.Win32.Foundation;
@@ -50,7 +51,7 @@ internal static class ExStyleSnapshot
         // EnumChildWindows BOOL return is documented as "not used" — it
         // returns FALSE when the callback stops enumeration or there are
         // no children. Real failures show in GetLastError.
-        _ = PInvoke.EnumChildWindows(hwnd, EnumChildCallback, default);
+        _ = PInvoke.EnumChildWindows(hwnd, &EnumChildCallback, default);
         Win32Guard.CheckLastError($"EnumChildWindows ({label})", log);
         if (_enumChildCount == 0)
         {
@@ -58,6 +59,7 @@ internal static class ExStyleSnapshot
         }
     }
 
+    [UnmanagedCallersOnly(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvStdcall)])]
     private static unsafe BOOL EnumChildCallback(HWND child, LPARAM _)
     {
         _enumChildCount++;

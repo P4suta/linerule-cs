@@ -23,6 +23,16 @@
          COM marshaling is correctness-warning material (IL2050/IL2057),
          silenced below; the project is now AOT-publishable. -->
     <IsAotCompatible>true</IsAotCompatible>
+    <!-- Phase E (2026-05-19): force CsWin32 into its AOT-ready emission mode
+         so generated COM interfaces use `[GeneratedComInterface]` /
+         ComWrappers source-gen instead of legacy `[ComImport]`. Built-in COM
+         is unsupported under Native AOT (IL3052), which manifested as a
+         silent startup crash in the published Linerule.exe; this flag pair
+         is the upstream-documented fix. DisableRuntimeMarshalling is
+         assembly-wide and changes the meaning of every P/Invoke in this
+         project — see https://github.com/microsoft/CsWin32 README. -->
+    <CsWin32RunAsBuildTask>true</CsWin32RunAsBuildTask>
+    <DisableRuntimeMarshalling>true</DisableRuntimeMarshalling>
     <!-- ADR-0010: trim/AOT/single-file analyzers still run here (enabled in
          Directory.Build.props independently of IsAotCompatible) so that NEW
          reflection is caught even in projects that are AOT-incompatible by
