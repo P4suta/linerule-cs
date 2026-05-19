@@ -74,15 +74,22 @@ commit-msg:
       run: mise exec -- bun x commitlint --edit {1}
 
 pre-push:
-  # piped = run in declaration order, stop on first failure. Publish is
-  # gated behind a green test run so `artifacts/publish/linerule.exe` is
-  # never refreshed from a broken tree.
+  # piped = sequential, stop on first failure. lefthook v2 runs commands
+  # alphabetically inside each hook, so a numeric prefix is the only
+  # reliable way to lock execution order — without it `publish` (p < t)
+  # would run before `test`, refreshing artifacts/publish/ even when the
+  # tree is broken. Prefix sort: 01-test → 02-publish.
   piped: true
   commands:
-    test:
-      run: mise exec -- dotnet test --nologo --no-restore
+    01-test:
+      # Restore + build + test in one shot. The pre-push runs from a
+      # fresh-clone state often enough (mise install bumps the dotnet
+      # SDK, NuGet cache turns over) that omitting --no-restore is the
+      # safer default — `dotnet test` is fast against an already-warm
+      # cache and idempotent against a cold one.
+      run: mise exec -- dotnet test --nologo
 
-    publish:
+    02-publish:
       # Mirrors `just publish` (Justfile) — self-contained Release build
       # for win-x64 dropped at `artifacts/publish/`. Runs only after tests
       # pass, so a clean `git push` always leaves the publish artifact in
