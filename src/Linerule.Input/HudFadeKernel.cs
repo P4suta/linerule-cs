@@ -5,8 +5,11 @@ namespace Linerule.Input;
 
 /// <summary>
 /// Pure HUD-opacity fade kernel: <c>(state, cursor, hudBounds, fadeDecayPx) → opacity ∈ [0, 1]</c>.
-/// Fade formula: <c>opacity = 1 − exp(−d/τ)</c> where <c>d</c> is the gap
-/// between the reading-ruler slit and the HUD rectangle and <c>τ = fadeDecayPx</c>.
+/// Fade formula: <c>opacity = PerceptualOpacity.Smooth(1 − exp(−d/τ))</c>,
+/// where <c>d</c> is the gap between the reading-ruler slit and the HUD
+/// rectangle and <c>τ = fadeDecayPx</c>. The exponential controls the
+/// physical decay rate; <see cref="PerceptualOpacity.Smooth"/> reshapes
+/// the [0, 1] output into a perceptually-smoothed ramp (no near-zero knee).
 /// </summary>
 public static class HudFadeKernel
 {
@@ -20,8 +23,8 @@ public static class HudFadeKernel
 
     /// <summary>
     /// Target HUD opacity for the current state. Returns 1 when the slit is
-    /// hidden or off (HUD fully visible), 0 on exact overlap, smooth
-    /// exponential decay in between.
+    /// hidden or off (HUD fully visible), 0 on exact overlap, and a
+    /// perceptually-smoothed exponential decay in between.
     /// </summary>
     public static float ComputeOpacity(State state, Point<Logical> cursor, HudBounds hud, float fadeDecayPx)
     {
@@ -31,7 +34,8 @@ public static class HudFadeKernel
             return 1f; // Division by zero guard; degenerate input → fully visible.
         }
         var distance = SlitToHudGap(state, cursor, hud);
-        return 1f - MathF.Exp(-distance / fadeDecayPx);
+        var linear = 1f - MathF.Exp(-distance / fadeDecayPx);
+        return PerceptualOpacity.Smooth(linear);
     }
 
     /// <summary>
