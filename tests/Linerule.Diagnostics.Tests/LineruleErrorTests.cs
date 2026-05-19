@@ -76,6 +76,7 @@ public sealed class LineruleErrorTests
     [InlineData(typeof(LineruleError.Hotkey), 4)]
     public void ToExitCode_covers_every_variant(System.Type variant, int expected)
     {
+        ArgumentNullException.ThrowIfNull(variant);
         // Variant → exit-code table is observable contract for shell scripts.
         // Theory rows cover the 5 sealed records exhaustively; a new variant
         // added without updating ToExitCode will fall to the `_ => 1`
