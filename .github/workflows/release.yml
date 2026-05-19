@@ -130,7 +130,14 @@ jobs:
         run: |
           gh release delete latest --yes --cleanup-tag 2>/dev/null || true
 
-      - name: Publish release
+      - name: Create draft release with assets
+        # GitHub's "Immutable releases" repo setting (now on by default for
+        # new repos) rejects asset uploads to an already-published release.
+        # softprops uploads each `files` entry as a separate API call after
+        # the release goes live, so anything past the first asset fails
+        # with "Cannot upload asset … to an immutable release."
+        # Workaround: stage everything in a draft, then lift to published
+        # + latest in the next step.
         uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda  # v3.0.0
         with:
           tag_name: latest
@@ -140,5 +147,15 @@ jobs:
             dist/Linerule-aot-win-x64.zip
             dist/sha256sums.txt
           prerelease: true
-          make_latest: "true"
+          draft: true
           target_commitish: ${{ github.sha }}
+
+      - name: Publish draft as latest pre-release
+        # `gh release edit` mutates a draft in place, so the assets uploaded
+        # above stay attached. `--latest` is what powers the
+        # `/releases/latest/download/<asset>` redirect; `--prerelease` keeps
+        # the page's pre-release badge.
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release edit latest --draft=false --latest --prerelease
