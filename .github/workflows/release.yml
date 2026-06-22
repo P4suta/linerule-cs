@@ -136,7 +136,7 @@ jobs:
         # history (which is what Immutable Releases is designed for); the
         # download URL `/releases/latest/download/<asset>` still resolves
         # because `--latest` updates the redirect target.
-        uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda  # v3.0.0
+        uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b  # v3.0.1
         with:
           tag_name: release-${{ needs.build-aot.outputs.version }}
           name: "Rolling release — ${{ needs.build-aot.outputs.version }}"
