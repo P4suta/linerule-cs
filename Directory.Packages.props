@@ -28,9 +28,9 @@
   </ItemGroup>
 
   <ItemGroup Label="Analyzers">
-    <PackageVersion Include="Microsoft.CodeAnalysis.BannedApiAnalyzers" Version="4.14.0" />
-    <PackageVersion Include="Meziantou.Analyzer" Version="3.0.104" />
+    <PackageVersion Include="Microsoft.CodeAnalysis.BannedApiAnalyzers" Version="5.6.0" />
+    <PackageVersion Include="Meziantou.Analyzer" Version="3.0.122" />
     <PackageVersion Include="Roslynator.Analyzers" Version="4.15.0" />
-    <PackageVersion Include="SonarAnalyzer.CSharp" Version="10.27.0.140913" />
+    <PackageVersion Include="SonarAnalyzer.CSharp" Version="10.29.0.143774" />
   </ItemGroup>
 </Project>
